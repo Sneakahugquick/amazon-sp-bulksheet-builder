@@ -1,0 +1,38 @@
+# Dependencies and build output
+node_modules/
+dist/
+.vite/
+.pnpm-store/
+
+# Local runtime and test artifacts
+.runtime/
+output/
+coverage/
+.playwright-cli/
+*.log
+
+# Codex operational files
+docs/CODEX_HANDOFF.md
+.codex/
+.codex-tmp/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python caches used by validation scripts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.local

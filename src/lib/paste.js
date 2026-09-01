@@ -1,0 +1,54 @@
+const MATCH_ALIASES = new Map([
+  ["exact", "exact"],
+  ["精准", "exact"],
+  ["精确", "exact"],
+  ["精准匹配", "exact"],
+  ["phrase", "phrase"],
+  ["词组", "phrase"],
+  ["词组匹配", "phrase"],
+  ["broad", "broad"],
+  ["广泛", "broad"],
+  ["广泛匹配", "broad"],
+]);
+
+function looksLikeHeader(parts) {
+  const joined = parts.join(" ").toLowerCase();
+  return /keyword|关键词/.test(joined) && /match|匹配|bid|出价/.test(joined);
+}
+
+export function parsePastedKeywords(text, defaults) {
+  const lines = String(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const rows = [];
+  const warnings = [];
+
+  lines.forEach((line, index) => {
+    const parts = line.includes("\t")
+      ? line.split("\t").map((part) => part.trim())
+      : line.split(",").map((part) => part.trim());
+    if (index === 0 && looksLikeHeader(parts)) return;
+
+    let keyword = parts[0] || "";
+    let matchType = defaults.matchType;
+    let bid = defaults.bid;
+
+    if (parts.length >= 2) {
+      const normalized = MATCH_ALIASES.get(parts[1].toLowerCase());
+      if (normalized) matchType = normalized;
+      else if (/^\d+(?:\.\d+)?$/.test(parts[1])) bid = parts[1];
+      else warnings.push(`第 ${index + 1} 行无法识别匹配方式“${parts[1]}”`);
+    }
+    if (parts.length >= 3) bid = parts[2];
+
+    rows.push({
+      id: crypto.randomUUID(),
+      text: keyword,
+      matchType,
+      bid,
+    });
+  });
+
+  return { rows, warnings };
+}
