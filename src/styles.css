@@ -993,6 +993,15 @@ textarea:focus {
   color: var(--text);
 }
 
+.button--danger-quiet {
+  border-color: transparent;
+  color: var(--danger);
+}
+
+.button--danger-quiet:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+
 .button--primary {
   border-color: var(--accent);
   background: var(--accent);
@@ -1014,6 +1023,7 @@ textarea:focus {
 
 .keyword-toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 14px;
 }

@@ -44,6 +44,7 @@
 - 每个关键词创建一套独立 MANUAL 关键词广告
 - 每个 SKU × 自动投放类型 × 出价档位创建一套独立 AUTO 广告
 - `exact`、`phrase`、`broad`
+- 正向与否定关键词在导出前校验 Amazon 的每词最多 10 个单词、80 个字符限制
 - 可独立批量添加广告组级否定词，支持 `negativeExact`、`negativePhrase`，整批应用到全部 MANUAL 广告组
 - `close-match`、`loose-match`、`substitutes`、`complements`
 - 自动广告可独立批量前置 `negativeExact` / `negativePhrase` 否定关键词和否定商品 ASIN

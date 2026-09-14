@@ -4,6 +4,7 @@ import { generatedStructureName } from "./naming.js";
 const MATCH_VALUES = new Set(MATCH_TYPES.map((item) => item.value));
 const NEGATIVE_MATCH_VALUES = new Set(NEGATIVE_MATCH_TYPES.map((item) => item.value));
 const INVALID_KEYWORD_PATTERN = /[\/^,]|\.\./;
+const MAX_KEYWORD_WORDS = 10;
 
 function issue(path, message, rowId = null) {
   return { path, message, rowId };
@@ -31,6 +32,11 @@ function validDate(value) {
 
 function compareYmd(left, right) {
   return String(left).localeCompare(String(right));
+}
+
+export function keywordWordCount(value) {
+  const text = String(value ?? "").trim();
+  return text ? text.split(/\s+/u).length : 0;
 }
 
 export function isBlankKeyword(row) {
@@ -101,6 +107,9 @@ export function validateKeywords(keywords) {
       if (keyword.length > 80) {
         issues.push(issue("keywordText", "关键词不能超过 80 个字符", row.id));
       }
+      if (keywordWordCount(keyword) > MAX_KEYWORD_WORDS) {
+        issues.push(issue("keywordWords", "关键词不能超过 10 个单词", row.id));
+      }
       if (INVALID_KEYWORD_PATTERN.test(keyword)) {
         issues.push(
           issue("keywordText", "关键词不能包含 /、^、逗号或连续两个句点", row.id),
@@ -156,6 +165,9 @@ export function validateNegativeKeywords(negativeKeywords = []) {
     const keyword = String(row.text ?? "").trim();
     if (keyword.length > 80) {
       issues.push(issue("negativeText", "否定关键词不能超过 80 个字符", row.id));
+    }
+    if (keywordWordCount(keyword) > MAX_KEYWORD_WORDS) {
+      issues.push(issue("negativeWords", "否定关键词不能超过 10 个单词", row.id));
     }
     if (INVALID_KEYWORD_PATTERN.test(keyword)) {
       issues.push(

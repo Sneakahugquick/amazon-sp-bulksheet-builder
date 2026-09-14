@@ -223,6 +223,13 @@ export default function App() {
     }
     return map;
   }, [keywordIssues]);
+  const problemKeywordRowIds = useMemo(() => {
+    const ids = new Set();
+    for (const row of keywords) {
+      if (keywordIssuesByRow.has(row.id)) ids.add(row.id);
+    }
+    return ids;
+  }, [keywords, keywordIssuesByRow]);
   const automaticSetupIssues = useMemo(
     () => validateAutomaticSetup(automaticSettings, todayYmd()),
     [automaticSettings],
@@ -339,6 +346,16 @@ export default function App() {
   function clearKeywords() {
     if (activeKeywords(keywords).length && !window.confirm("确定清空当前关键词列表吗？")) return;
     setKeywords([EMPTY_KEYWORD()]);
+  }
+
+  function clearProblemKeywordRows() {
+    const count = problemKeywordRowIds.size;
+    if (!count) return;
+    setKeywords((current) => {
+      const next = current.filter((row) => !problemKeywordRowIds.has(row.id));
+      return next.length ? next : [EMPTY_KEYWORD()];
+    });
+    setToast(`已清除 ${count} 行有问题的关键词`);
   }
 
   function importBatchRows(nextRows, mode) {
@@ -663,7 +680,11 @@ export default function App() {
 
             <section className="workspace-section workspace-section--keywords" id="keyword-settings">
               <div className="section-title section-title--keywords"><h2>关键词结果检查</h2><span>{keywordCount} 个关键词 → {keywordCount} 套独立广告</span></div>
-              <div className="keyword-toolbar"><button className="button button--secondary" onClick={() => setKeywords((current) => [...current, EMPTY_KEYWORD()])} type="button"><Icon name="plus" />补充一行</button><button className="button button--quiet" onClick={clearKeywords} type="button"><Icon name="trash" />清空</button></div>
+              <div className="keyword-toolbar">
+                <button className="button button--secondary" onClick={() => setKeywords((current) => [...current, EMPTY_KEYWORD()])} type="button"><Icon name="plus" />补充一行</button>
+                <button className="button button--danger-quiet" disabled={!problemKeywordRowIds.size} onClick={clearProblemKeywordRows} type="button"><Icon name="alert" />清除有问题的行{problemKeywordRowIds.size ? `（${problemKeywordRowIds.size}）` : ""}</button>
+                <button className="button button--quiet" onClick={clearKeywords} type="button"><Icon name="trash" />清空</button>
+              </div>
               <KeywordTable issuesByRow={keywordIssuesByRow} onAdd={() => setKeywords((current) => [...current, EMPTY_KEYWORD()])} onChange={updateKeyword} onDelete={deleteKeyword} rows={keywords} />
             </section>
 

@@ -194,12 +194,33 @@ test("flags duplicate keyword-match pairs and derived IDs that do not start with
   assert.equal(issues.filter((item) => item.path === "duplicate").length, 2);
 });
 
+test("flags keywords over Amazon's ten-word limit even when within 80 characters", async () => {
+  const fixture = validFixture();
+  fixture.keywords = [{
+    id: "k-eleven-words",
+    text: "Concealed Carry Fanny Pack with drop down holster and padded back",
+    matchType: "exact",
+    bid: "0.20",
+  }];
+  const bytes = await readFile(templatePath);
+  const template = await inspectTemplate(bytes, "template.xlsx");
+  const issues = validateAll(fixture.settings, fixture.keywords, [], template, "20260901");
+  assert.ok(
+    issues.some((item) => item.path === "keywordWords" && item.rowId === "k-eleven-words"),
+  );
+});
+
 test("validates duplicate and malformed rows in the independent negative-keyword batch", async () => {
   const fixture = validFixture();
   const negativeKeywords = [
     { id: "n1", text: "invalid,negative", matchType: "broad" },
     { id: "n2", text: "poster", matchType: "negativeExact" },
     { id: "n3", text: "POSTER", matchType: "negativeExact" },
+    {
+      id: "n4",
+      text: "one two three four five six seven eight nine ten eleven",
+      matchType: "negativePhrase",
+    },
   ];
   const bytes = await readFile(templatePath);
   const template = await inspectTemplate(bytes, "template.xlsx");
@@ -212,6 +233,7 @@ test("validates duplicate and malformed rows in the independent negative-keyword
   );
   assert.ok(issues.some((item) => item.path === "negativeText" && item.rowId === "n1"));
   assert.ok(issues.some((item) => item.path === "negativeMatchType" && item.rowId === "n1"));
+  assert.ok(issues.some((item) => item.path === "negativeWords" && item.rowId === "n4"));
   assert.equal(issues.filter((item) => item.path === "negativeDuplicate").length, 2);
 });
 
