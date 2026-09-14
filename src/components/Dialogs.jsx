@@ -46,13 +46,16 @@ const PREVIEW_HEADERS = [
   "Ad Group ID",
   "Campaign Name",
   "Ad Group Name",
+  "Targeting Type",
+  "Daily Budget",
   "SKU",
   "Bid",
   "Keyword Text",
   "Match Type",
+  "Product Targeting Expression",
 ];
 
-export function PreviewDialog({ rows, onClose }) {
+export function PreviewDialog({ rows, onClose, description }) {
   const [page, setPage] = useState(1);
   const pageCount = Math.max(1, Math.ceil(rows.length / PREVIEW_PAGE_SIZE));
   const visibleRows = useMemo(() => {
@@ -62,7 +65,7 @@ export function PreviewDialog({ rows, onClose }) {
 
   return (
     <DialogShell
-      description={`共 ${rows.length} 行；每个关键词连续显示 Campaign、Ad Group、Product Ad、Keyword 四行。完整文件保留官方 ${SP_HEADERS.length} 列。`}
+      description={description || `共 ${rows.length} 行；完整文件保留官方 ${SP_HEADERS.length} 列。`}
       onClose={onClose}
       title="预览生成行"
       wide

@@ -41,6 +41,11 @@ export const MATCH_TYPES = [
   { value: "broad", label: "广泛匹配 · broad" },
 ];
 
+export const NEGATIVE_MATCH_TYPES = [
+  { value: "negativeExact", label: "精准否定 · negativeExact" },
+  { value: "negativePhrase", label: "词组否定 · negativePhrase" },
+];
+
 export const BIDDING_STRATEGIES = [
   "Dynamic bids - down only",
   "Dynamic bids - up and down",
@@ -52,7 +57,16 @@ export const ENTITY_LABELS = {
   "Ad Group": "Ad Group",
   "Product Ad": "Product Ad",
   Keyword: "Keyword",
+  "Negative Keyword": "Negative Keyword",
+  "Product Targeting": "Product Targeting",
 };
+
+export const AUTO_TARGETING_TYPES = [
+  { value: "close-match", label: "紧密匹配", description: "与商品高度相关的搜索词" },
+  { value: "loose-match", label: "宽泛匹配", description: "与商品较宽泛相关的搜索词" },
+  { value: "substitutes", label: "同类商品", description: "与商品相似的详情页" },
+  { value: "complements", label: "关联商品", description: "与商品互补的详情页" },
+];
 
 export const DEFAULT_TEMPLATE_URL = "./AdvertisingBulksheetTemplate-seller.xlsx";
 
@@ -61,6 +75,12 @@ export const EMPTY_KEYWORD = () => ({
   text: "",
   matchType: "exact",
   bid: "",
+});
+
+export const EMPTY_NEGATIVE_KEYWORD = () => ({
+  id: crypto.randomUUID(),
+  text: "",
+  matchType: "negativeExact",
 });
 
 export function todayYmd() {
@@ -86,4 +106,29 @@ export function defaultBatchSettings() {
   };
 }
 
-export const DRAFT_STORAGE_KEY = "amazon-sp-bulksheet-builder:draft:v2";
+export const EMPTY_BID_TIER = () => ({
+  id: crypto.randomUUID(),
+  label: "",
+  bid: "",
+});
+
+export function defaultAutomaticSettings() {
+  return {
+    skuText: "",
+    totalDailyBudget: "",
+    selectedTargetingTypes: AUTO_TARGETING_TYPES.map((item) => item.value),
+    bidTiers: [
+      { id: crypto.randomUUID(), label: "标准档", bid: "" },
+    ],
+    startDate: todayYmd(),
+    endDate: "",
+    biddingStrategy: BIDDING_STRATEGIES[0],
+    state: "paused",
+    portfolioId: "",
+    offAmazon: "",
+  };
+}
+
+export const LEGACY_DRAFT_STORAGE_KEY = "amazon-sp-bulksheet-builder:draft:v2";
+export const PLAINTEXT_DRAFT_STORAGE_KEY = "amazon-sp-bulksheet-builder:draft:v3";
+export const DRAFT_STORAGE_KEY = "amazon-sp-bulksheet-builder:draft:v4";

@@ -10,7 +10,8 @@ function argument(name, fallback) {
 
 const port = Number(argument("--port", "4173"));
 const idleMinutes = Number(argument("--idle-minutes", "120"));
-const root = resolve(new URL("./dist", import.meta.url).pathname.replace(/^\/(.:\/)/, "$1"));
+const defaultRoot = new URL("./dist", import.meta.url).pathname.replace(/^\/(.:\/)/, "$1");
+const root = resolve(argument("--root", defaultRoot));
 
 if (!existsSync(root)) {
   console.error("找不到 dist 目录，请先运行 npm run build。");
@@ -37,32 +38,47 @@ function resetIdleTimer() {
 
 const server = createServer((request, response) => {
   resetIdleTimer();
-  const requestUrl = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
-  if (requestUrl.pathname === "/__health") {
-    response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-    response.end(JSON.stringify({ ok: true, app: "amazon-sp-bulksheet-builder" }));
-    return;
-  }
+  try {
+    const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+    if (requestUrl.pathname === "/__health") {
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ ok: true, app: "amazon-sp-bulksheet-builder" }));
+      return;
+    }
 
-  const requestedPath = requestUrl.pathname === "/"
-    ? "index.html"
-    : decodeURIComponent(requestUrl.pathname.replace(/^\/+/, ""));
-  const filePath = normalize(join(root, requestedPath));
-  if (filePath !== root && !filePath.startsWith(`${root}${sep}`)) {
-    response.writeHead(403);
-    response.end("Forbidden");
-    return;
-  }
+    const requestedPath = requestUrl.pathname === "/"
+      ? "index.html"
+      : decodeURIComponent(requestUrl.pathname.replace(/^\/+/, ""));
+    if (requestedPath.includes("\0")) throw new URIError("Invalid path");
+    const filePath = normalize(join(root, requestedPath));
+    if (filePath !== root && !filePath.startsWith(`${root}${sep}`)) {
+      response.writeHead(403, { "cache-control": "no-store" });
+      response.end("Forbidden");
+      return;
+    }
 
-  let resolvedPath = filePath;
-  if (!existsSync(resolvedPath) || !statSync(resolvedPath).isFile()) {
-    resolvedPath = join(root, "index.html");
+    let resolvedPath = filePath;
+    if (!existsSync(resolvedPath) || !statSync(resolvedPath).isFile()) {
+      resolvedPath = join(root, "index.html");
+    }
+    response.writeHead(200, {
+      "cache-control": "no-store",
+      "content-type": mimeTypes[extname(resolvedPath).toLowerCase()] || "application/octet-stream",
+    });
+    const stream = createReadStream(resolvedPath);
+    stream.on("error", () => response.destroy());
+    stream.pipe(response);
+  } catch {
+    if (response.headersSent) {
+      response.destroy();
+      return;
+    }
+    response.writeHead(400, {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    });
+    response.end("Bad Request");
   }
-  response.writeHead(200, {
-    "cache-control": "no-store",
-    "content-type": mimeTypes[extname(resolvedPath).toLowerCase()] || "application/octet-stream",
-  });
-  createReadStream(resolvedPath).pipe(response);
 });
 
 server.listen(port, "127.0.0.1", () => {

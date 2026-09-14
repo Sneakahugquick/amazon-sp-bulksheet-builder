@@ -3,7 +3,7 @@ import {
   SP_HEADERS,
   SP_SHEET_NAME,
 } from "./constants.js";
-import { activeKeywords, normalizeMoney } from "./validation.js";
+import { activeKeywords, activeNegativeKeywords, normalizeMoney } from "./validation.js";
 import { generatedNames } from "./naming.js";
 
 export const TEMPLATE_LIMITS = Object.freeze({
@@ -11,6 +11,23 @@ export const TEMPLATE_LIMITS = Object.freeze({
   maxZipEntries: 200,
   maxUncompressedBytes: 25 * 1024 * 1024,
 });
+
+export const TRUSTED_TEMPLATE_SHA256 = "96a55fa9c1febdadcc8c1dac6107404f822a32688bb473c2450658a656af2546";
+
+async function sha256Hex(input) {
+  const bytes = input instanceof ArrayBuffer
+    ? new Uint8Array(input)
+    : new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return [...digest].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+async function assertTrustedTemplateDigest(input) {
+  const digest = await sha256Hex(input);
+  if (digest !== TRUSTED_TEMPLATE_SHA256) {
+    throw new Error("模板未通过可信摘要校验，只接受当前工具内置的官方模板");
+  }
+}
 
 function assertSafeTemplateArchive(zip) {
   const entries = Object.values(zip.files);
@@ -154,8 +171,9 @@ function emptyRow(entity) {
   };
 }
 
-export function buildSpRows(settings, keywords) {
+export function buildSpRows(settings, keywords, negativeKeywords = []) {
   const rows = [];
+  const negatives = activeNegativeKeywords(negativeKeywords);
   for (const keyword of activeKeywords(keywords)) {
     const names = generatedNames(keyword);
     const campaignId = names.campaignName;
@@ -201,6 +219,17 @@ export function buildSpRows(settings, keywords) {
       "Keyword Text": keyword.text.trim(),
       "Match Type": keyword.matchType,
     });
+
+    for (const negativeKeyword of negatives) {
+      rows.push({
+        ...emptyRow("Negative Keyword"),
+        "Campaign ID": campaignId,
+        "Ad Group ID": adGroupId,
+        State: settings.state,
+        "Keyword Text": negativeKeyword.text.trim(),
+        "Match Type": negativeKeyword.matchType,
+      });
+    }
   }
 
   return rows;
@@ -213,7 +242,7 @@ export function entityCounts(rows) {
   }, {});
 }
 
-export async function inspectTemplate(arrayBuffer, fileName = "template.xlsx") {
+async function inspectWorkbookStructure(arrayBuffer, fileName, requireTrustedDigest) {
   const metadata = {
     fileName,
     buffer: arrayBuffer,
@@ -226,6 +255,7 @@ export async function inspectTemplate(arrayBuffer, fileName = "template.xlsx") {
 
   try {
     assertSafeTemplateInput(arrayBuffer);
+    if (requireTrustedDigest) await assertTrustedTemplateDigest(arrayBuffer);
     const zip = await JSZip.loadAsync(arrayBuffer);
     assertSafeTemplateArchive(zip);
     const sheetPath = await resolveSheetPath(zip, SP_SHEET_NAME);
@@ -258,8 +288,17 @@ export async function inspectTemplate(arrayBuffer, fileName = "template.xlsx") {
   return metadata;
 }
 
+export async function inspectTemplate(arrayBuffer, fileName = "template.xlsx") {
+  return inspectWorkbookStructure(arrayBuffer, fileName, true);
+}
+
+export async function inspectGeneratedWorkbook(arrayBuffer, fileName = "generated.xlsx") {
+  return inspectWorkbookStructure(arrayBuffer, fileName, false);
+}
+
 export async function createBulksheet(arrayBuffer, rows) {
   assertSafeTemplateInput(arrayBuffer);
+  await assertTrustedTemplateDigest(arrayBuffer);
   const zip = await JSZip.loadAsync(arrayBuffer);
   assertSafeTemplateArchive(zip);
   const sheetPath = await resolveSheetPath(zip, SP_SHEET_NAME);

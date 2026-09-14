@@ -11,6 +11,8 @@ export function Icon({ name, size = 18, strokeWidth = 1.8, className = "" }) {
     info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7h.01"/></>,
     file: <><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/></>,
     close: <><path d="m6 6 12 12"/><path d="m18 6-12 12"/></>,
+    refresh: <><path d="M20 7h-5V2"/><path d="M20 7a8 8 0 1 0 1 7"/></>,
+    unlock: <><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M9 10V7a3 3 0 0 1 5.8-.9"/></>,
     chevron: <path d="m9 6 6 6-6 6"/>,
     alert: <><path d="M12 3 2.8 20h18.4z"/><path d="M12 9v5"/><path d="M12 17h.01"/></>,
   };

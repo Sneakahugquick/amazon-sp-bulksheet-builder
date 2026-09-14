@@ -25,9 +25,14 @@ test("GitHub Pages deployment uses minimal permissions and immutable action pins
     new URL("../.github/workflows/pages.yml", import.meta.url),
     "utf8",
   );
-  assert.match(workflow, /contents: read/);
-  assert.match(workflow, /pages: write/);
-  assert.match(workflow, /id-token: write/);
+  const buildBlock = workflow.match(/\n  build:[\s\S]*?\n  deploy:/)?.[0] || "";
+  const deployBlock = workflow.match(/\n  deploy:[\s\S]*$/)?.[0] || "";
+  assert.match(workflow, /^permissions: \{\}$/m);
+  assert.match(buildBlock, /permissions:\s+contents: read/);
+  assert.doesNotMatch(buildBlock, /pages: write|id-token: write/);
+  assert.match(buildBlock, /persist-credentials: false/);
+  assert.match(deployBlock, /pages: write/);
+  assert.match(deployBlock, /id-token: write/);
   assert.doesNotMatch(workflow, /pull_request:/);
   assert.match(workflow, /pnpm install --frozen-lockfile --ignore-scripts/);
 

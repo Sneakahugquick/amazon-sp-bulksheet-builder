@@ -11,6 +11,16 @@ const MATCH_ALIASES = new Map([
   ["广泛匹配", "broad"],
 ]);
 
+const NEGATIVE_MATCH_ALIASES = new Map([
+  ["negativeexact", "negativeExact"],
+  ["negative exact", "negativeExact"],
+  ["精准否定", "negativeExact"],
+  ["精确否定", "negativeExact"],
+  ["negativephrase", "negativePhrase"],
+  ["negative phrase", "negativePhrase"],
+  ["词组否定", "negativePhrase"],
+]);
+
 function looksLikeHeader(parts) {
   const joined = parts.join(" ").toLowerCase();
   return /keyword|关键词/.test(joined) && /match|匹配|bid|出价/.test(joined);
@@ -47,6 +57,41 @@ export function parsePastedKeywords(text, defaults) {
       text: keyword,
       matchType,
       bid,
+    });
+  });
+
+  return { rows, warnings };
+}
+
+function looksLikeNegativeHeader(parts) {
+  return /negative keyword|否定词|否定关键词/i.test(parts.join(" "));
+}
+
+export function parsePastedNegativeKeywords(text, defaultMatchType = "negativeExact") {
+  const lines = String(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const rows = [];
+  const warnings = [];
+
+  lines.forEach((line, index) => {
+    const parts = line.includes("\t")
+      ? line.split("\t").map((part) => part.trim())
+      : line.split(",").map((part) => part.trim());
+    if (index === 0 && looksLikeNegativeHeader(parts)) return;
+
+    let matchType = defaultMatchType;
+    if (parts[1]) {
+      const normalized = NEGATIVE_MATCH_ALIASES.get(parts[1].toLowerCase());
+      if (normalized) matchType = normalized;
+      else warnings.push(`第 ${index + 1} 行无法识别否定方式“${parts[1]}”`);
+    }
+
+    rows.push({
+      id: crypto.randomUUID(),
+      text: parts[0] || "",
+      matchType,
     });
   });
 

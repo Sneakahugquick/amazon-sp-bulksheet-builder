@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parsePastedKeywords } from "../src/lib/paste.js";
+import { parsePastedKeywords, parsePastedNegativeKeywords } from "../src/lib/paste.js";
 
 test("parses an Excel three-column keyword, match type, and bid table", () => {
   const parsed = parsePastedKeywords(
@@ -30,6 +30,32 @@ test("applies one shared match type and bid to a one-column keyword list", () =>
       { text: "abstract wall art", matchType: "phrase", bid: "0.55" },
       { text: "neutral wall decor", matchType: "phrase", bid: "0.55" },
       { text: "large canvas art", matchType: "phrase", bid: "0.55" },
+    ],
+  );
+});
+
+test("parses an independent negative-keyword batch with both negative match types", () => {
+  const parsed = parsePastedNegativeKeywords(
+    "否定词\t否定方式\nposter\t精准否定\nframed\tnegativePhrase",
+    "negativeExact",
+  );
+  assert.equal(parsed.warnings.length, 0);
+  assert.deepEqual(
+    parsed.rows.map(({ text, matchType }) => ({ text, matchType })),
+    [
+      { text: "poster", matchType: "negativeExact" },
+      { text: "framed", matchType: "negativePhrase" },
+    ],
+  );
+});
+
+test("applies one selected default to a one-column negative-keyword list", () => {
+  const parsed = parsePastedNegativeKeywords("poster\nframed", "negativePhrase");
+  assert.deepEqual(
+    parsed.rows.map(({ text, matchType }) => ({ text, matchType })),
+    [
+      { text: "poster", matchType: "negativePhrase" },
+      { text: "framed", matchType: "negativePhrase" },
     ],
   );
 });

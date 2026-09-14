@@ -9,6 +9,10 @@ export function SummaryRail({
   exporting,
   onPreview,
   onExport,
+  entityOrder = Object.keys(ENTITY_LABELS),
+  summaryTitle,
+  summaryCaption,
+  previewLabel = "预览生成行",
 }) {
   const ready = issues.length === 0;
   return (
@@ -27,10 +31,10 @@ export function SummaryRail({
       </section>
 
       <section className="row-summary">
-        <h3>将创建 {counts.Campaign || 0} 套独立广告</h3>
-        <p className="row-summary__caption">每套 4 行，共 {totalRows} 行</p>
+        <h3>{summaryTitle || `将创建 ${counts.Campaign || 0} 套独立广告`}</h3>
+        <p className="row-summary__caption">{summaryCaption || `每套 4 行，共 ${totalRows} 行`}</p>
         <dl>
-          {Object.keys(ENTITY_LABELS).map((entity) => (
+          {entityOrder.map((entity) => (
             <div key={entity}>
               <dt>{ENTITY_LABELS[entity]}</dt>
               <dd>{counts[entity] || 0}</dd>
@@ -61,7 +65,7 @@ export function SummaryRail({
           type="button"
         >
           <Icon name="eye" />
-          预览生成行
+          {previewLabel}
         </button>
         <button
           className="button button--primary button--wide"

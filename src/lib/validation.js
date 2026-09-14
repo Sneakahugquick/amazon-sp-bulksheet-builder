@@ -1,7 +1,8 @@
-import { BIDDING_STRATEGIES, MATCH_TYPES } from "./constants.js";
+import { BIDDING_STRATEGIES, MATCH_TYPES, NEGATIVE_MATCH_TYPES } from "./constants.js";
 import { generatedStructureName } from "./naming.js";
 
 const MATCH_VALUES = new Set(MATCH_TYPES.map((item) => item.value));
+const NEGATIVE_MATCH_VALUES = new Set(NEGATIVE_MATCH_TYPES.map((item) => item.value));
 const INVALID_KEYWORD_PATTERN = /[\/^,]|\.\./;
 
 function issue(path, message, rowId = null) {
@@ -138,10 +139,55 @@ export function validateKeywords(keywords) {
   return issues;
 }
 
-export function validateAll(settings, keywords, template, today) {
+export function isBlankNegativeKeyword(row) {
+  return !String(row.text ?? "").trim();
+}
+
+export function activeNegativeKeywords(rows = []) {
+  return (Array.isArray(rows) ? rows : []).filter((row) => !isBlankNegativeKeyword(row));
+}
+
+export function validateNegativeKeywords(negativeKeywords = []) {
+  const issues = [];
+  const rows = activeNegativeKeywords(negativeKeywords);
+  const seen = new Map();
+
+  for (const row of rows) {
+    const keyword = String(row.text ?? "").trim();
+    if (keyword.length > 80) {
+      issues.push(issue("negativeText", "否定关键词不能超过 80 个字符", row.id));
+    }
+    if (INVALID_KEYWORD_PATTERN.test(keyword)) {
+      issues.push(
+        issue("negativeText", "否定关键词不能包含 /、^、逗号或连续两个句点", row.id),
+      );
+    }
+    if (!NEGATIVE_MATCH_VALUES.has(row.matchType)) {
+      issues.push(
+        issue("negativeMatchType", "否定方式必须是 negativeExact 或 negativePhrase", row.id),
+      );
+    }
+
+    const duplicateKey = `${keyword.toLocaleLowerCase()}|${row.matchType}`;
+    if (seen.has(duplicateKey)) {
+      issues.push(issue("negativeDuplicate", "否定词与否定方式重复", row.id));
+      const firstRowId = seen.get(duplicateKey);
+      if (!issues.some((item) => item.path === "negativeDuplicate" && item.rowId === firstRowId)) {
+        issues.push(issue("negativeDuplicate", "否定词与否定方式重复", firstRowId));
+      }
+    } else {
+      seen.set(duplicateKey, row.id);
+    }
+  }
+
+  return issues;
+}
+
+export function validateAll(settings, keywords, negativeKeywords, template, today) {
   const issues = [
     ...validateBatchSettings(settings, today),
     ...validateKeywords(keywords),
+    ...validateNegativeKeywords(negativeKeywords),
   ];
 
   if (!template?.buffer) {
