@@ -97,3 +97,28 @@ export function parsePastedNegativeKeywords(text, defaultMatchType = "negativeEx
 
   return { rows, warnings };
 }
+
+function looksLikeNegativeProductHeader(parts) {
+  return /asin|negative product|否定商品/i.test(parts.join(" "));
+}
+
+export function parsePastedNegativeProducts(text) {
+  const lines = String(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const rows = [];
+
+  lines.forEach((line, index) => {
+    const parts = line.includes("\t")
+      ? line.split("\t").map((part) => part.trim())
+      : line.split(",").map((part) => part.trim());
+    if (index === 0 && looksLikeNegativeProductHeader(parts)) return;
+    rows.push({
+      id: crypto.randomUUID(),
+      asin: String(parts[0] || "").toUpperCase(),
+    });
+  });
+
+  return { rows, warnings: [] };
+}

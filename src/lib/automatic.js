@@ -2,10 +2,15 @@ import {
   AUTO_TARGETING_TYPES,
   BIDDING_STRATEGIES,
 } from "./constants.js";
-import { normalizeMoney } from "./validation.js";
+import {
+  activeNegativeKeywords,
+  activeNegativeProducts,
+  normalizeMoney,
+} from "./validation.js";
 
 const AUTO_TYPE_VALUES = new Set(AUTO_TARGETING_TYPES.map((item) => item.value));
 const MONEY_PATTERN = /^\d+(?:\.\d{1,2})?$/;
+export const MAX_AUTOMATIC_OUTPUT_ROWS = 100000;
 
 function issue(path, message, rowId = null) {
   return { path, message, rowId };
@@ -246,8 +251,29 @@ function emptyRow(entity) {
   return { Product: "Sponsored Products", Entity: entity, Operation: "Create" };
 }
 
-export function buildAutomaticSpRows(settings, campaigns) {
+export function automaticOutputRowCount(campaigns, negativeKeywords = [], negativeProducts = []) {
+  const perCampaign = 4
+    + activeNegativeKeywords(negativeKeywords).length
+    + activeNegativeProducts(negativeProducts).length;
+  return campaigns.length * perCampaign;
+}
+
+export function validateAutomaticOutputSize(campaigns, negativeKeywords = [], negativeProducts = []) {
+  const rows = automaticOutputRowCount(campaigns, negativeKeywords, negativeProducts);
+  return rows > MAX_AUTOMATIC_OUTPUT_ROWS
+    ? [issue("automaticOutputSize", `当前组合将生成 ${rows.toLocaleString()} 行，单次最多 ${MAX_AUTOMATIC_OUTPUT_ROWS.toLocaleString()} 行，请拆批导出`)]
+    : [];
+}
+
+export function buildAutomaticSpRows(
+  settings,
+  campaigns,
+  negativeKeywords = [],
+  negativeProducts = [],
+) {
   const rows = [];
+  const activeKeywordNegatives = activeNegativeKeywords(negativeKeywords);
+  const activeProductNegatives = activeNegativeProducts(negativeProducts);
   for (const campaign of campaigns) {
     const campaignId = campaign.temporaryId;
     const adGroupId = `${campaign.temporaryId}-AG`;
@@ -287,6 +313,27 @@ export function buildAutomaticSpRows(settings, campaigns) {
       Bid: normalizeMoney(campaign.bid),
       "Product Targeting Expression": campaign.targetingType,
     });
+
+    for (const negativeKeyword of activeKeywordNegatives) {
+      rows.push({
+        ...emptyRow("Negative Keyword"),
+        "Campaign ID": campaignId,
+        "Ad Group ID": adGroupId,
+        State: campaign.state,
+        "Keyword Text": String(negativeKeyword.text).trim(),
+        "Match Type": negativeKeyword.matchType,
+      });
+    }
+
+    for (const negativeProduct of activeProductNegatives) {
+      rows.push({
+        ...emptyRow("Negative Product Targeting"),
+        "Campaign ID": campaignId,
+        "Ad Group ID": adGroupId,
+        State: campaign.state,
+        "Product Targeting Expression": `asin="${String(negativeProduct.asin).trim().toUpperCase()}"`,
+      });
+    }
   }
   return rows;
 }

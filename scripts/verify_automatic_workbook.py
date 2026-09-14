@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -16,7 +17,7 @@ EXPECTED_SHEETS = [
     "RAS Campaigns",
     "Config",
 ]
-EXPECTED_ENTITIES = ["Campaign", "Ad Group", "Product Ad", "Product Targeting"]
+BASE_ENTITIES = ["Campaign", "Ad Group", "Product Ad", "Product Targeting"]
 EXPECTED_TARGETS = {"close-match", "loose-match", "substitutes", "complements"}
 
 
@@ -31,33 +32,61 @@ def main() -> None:
 
     sheet = workbook["Sponsored Products Campaigns"]
     assert sheet.max_column == 32, sheet.max_column
-    assert (sheet.max_row - 1) % 4 == 0, sheet.max_row
-    campaign_count = (sheet.max_row - 1) // 4
+    row_numbers = range(2, sheet.max_row + 1)
+    rows_by_entity = {}
+    for row in row_numbers:
+        entity = sheet.cell(row=row, column=2).value
+        rows_by_entity.setdefault(entity, []).append(row)
 
-    entities = [sheet.cell(row=row, column=2).value for row in range(2, sheet.max_row + 1)]
-    for offset in range(0, len(entities), 4):
-        assert entities[offset : offset + 4] == EXPECTED_ENTITIES
-
-    campaign_rows = range(2, sheet.max_row + 1, 4)
-    ad_group_rows = range(3, sheet.max_row + 1, 4)
-    product_ad_rows = range(4, sheet.max_row + 1, 4)
-    targeting_rows = range(5, sheet.max_row + 1, 4)
+    campaign_rows = rows_by_entity.get("Campaign", [])
+    campaign_count = len(campaign_rows)
+    assert campaign_count > 0
+    for entity in BASE_ENTITIES:
+        assert len(rows_by_entity.get(entity, [])) == campaign_count, (entity, rows_by_entity)
 
     campaign_ids = [sheet.cell(row=row, column=4).value for row in campaign_rows]
+    campaign_id_set = set(campaign_ids)
     targeting_types = [sheet.cell(row=row, column=14).value for row in campaign_rows]
     budgets = [sheet.cell(row=row, column=16).value for row in campaign_rows]
-    skus = [sheet.cell(row=row, column=17).value for row in product_ad_rows]
-    default_bids = [sheet.cell(row=row, column=18).value for row in ad_group_rows]
-    target_bids = [sheet.cell(row=row, column=19).value for row in targeting_rows]
-    expressions = [sheet.cell(row=row, column=27).value for row in targeting_rows]
+    skus = [sheet.cell(row=row, column=17).value for row in rows_by_entity["Product Ad"]]
+    default_bids = [sheet.cell(row=row, column=18).value for row in rows_by_entity["Ad Group"]]
+    target_bids = [sheet.cell(row=row, column=19).value for row in rows_by_entity["Product Targeting"]]
+    expressions = [
+        sheet.cell(row=row, column=27).value
+        for row in rows_by_entity["Product Targeting"]
+    ]
+    negative_keyword_rows = rows_by_entity.get("Negative Keyword", [])
+    negative_product_rows = rows_by_entity.get("Negative Product Targeting", [])
 
-    assert len(set(campaign_ids)) == campaign_count
+    assert len(campaign_id_set) == campaign_count
     assert set(targeting_types) == {"AUTO"}
-    assert set(expressions) == EXPECTED_TARGETS
+    assert set(expressions).issubset(EXPECTED_TARGETS) and expressions
     assert all(isinstance(value, (int, float)) and value > 0 for value in budgets)
     assert all(isinstance(value, (int, float)) and value > 0 for value in default_bids)
     assert target_bids == default_bids
     assert all(skus)
+    for entity in BASE_ENTITIES[1:]:
+        assert {
+            sheet.cell(row=row, column=4).value
+            for row in rows_by_entity[entity]
+        } == campaign_id_set
+    assert len(negative_keyword_rows) % campaign_count == 0
+    assert len(negative_product_rows) % campaign_count == 0
+    assert all(
+        sheet.cell(row=row, column=23).value in {"negativeExact", "negativePhrase"}
+        for row in negative_keyword_rows
+    )
+    assert all(
+        re.fullmatch(r'asin="[A-Z0-9]{10}"', str(sheet.cell(row=row, column=27).value))
+        for row in negative_product_rows
+    )
+    assert all(
+        sheet.cell(row=row, column=4).value in campaign_id_set
+        and sheet.cell(row=row, column=5).value
+        for row in [*negative_keyword_rows, *negative_product_rows]
+    )
+
+    entities = [sheet.cell(row=row, column=2).value for row in row_numbers]
 
     print(json.dumps({
         "ok": True,
@@ -67,11 +96,16 @@ def main() -> None:
         "sp_rows": sheet.max_row - 1,
         "sp_columns": sheet.max_column,
         "campaign_count": campaign_count,
-        "entity_counts": {entity: entities.count(entity) for entity in EXPECTED_ENTITIES},
+        "entity_counts": {
+            entity: entities.count(entity)
+            for entity in [*BASE_ENTITIES, "Negative Keyword", "Negative Product Targeting"]
+        },
         "targeting_type": "AUTO",
         "targeting_expressions": sorted(set(expressions)),
         "skus": sorted(set(skus)),
         "daily_budget_total": round(sum(budgets), 2),
+        "negative_keywords_per_campaign": len(negative_keyword_rows) // campaign_count,
+        "negative_products_per_campaign": len(negative_product_rows) // campaign_count,
     }, ensure_ascii=False, indent=2))
 
 

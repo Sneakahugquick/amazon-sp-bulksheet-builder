@@ -183,6 +183,42 @@ export function validateNegativeKeywords(negativeKeywords = []) {
   return issues;
 }
 
+export function isBlankNegativeProduct(row) {
+  return !String(row?.asin ?? "").trim();
+}
+
+export function activeNegativeProducts(rows = []) {
+  return (Array.isArray(rows) ? rows : []).filter((row) => !isBlankNegativeProduct(row));
+}
+
+export function validateNegativeProducts(negativeProducts = []) {
+  const issues = [];
+  const rows = activeNegativeProducts(negativeProducts);
+  const seen = new Map();
+
+  if (rows.length > 1000) {
+    issues.push(issue("negativeProducts", "单次最多添加 1,000 个否定商品 ASIN"));
+  }
+
+  for (const row of rows) {
+    const asin = String(row.asin ?? "").trim().toUpperCase();
+    if (!/^[A-Z0-9]{10}$/.test(asin)) {
+      issues.push(issue("negativeProductAsin", "ASIN 必须是 10 位字母或数字", row.id));
+    }
+    if (seen.has(asin)) {
+      issues.push(issue("negativeProductDuplicate", "否定商品 ASIN 重复", row.id));
+      const firstRowId = seen.get(asin);
+      if (!issues.some((item) => item.path === "negativeProductDuplicate" && item.rowId === firstRowId)) {
+        issues.push(issue("negativeProductDuplicate", "否定商品 ASIN 重复", firstRowId));
+      }
+    } else {
+      seen.set(asin, row.id);
+    }
+  }
+
+  return issues;
+}
+
 export function validateAll(settings, keywords, negativeKeywords, template, today) {
   const issues = [
     ...validateBatchSettings(settings, today),

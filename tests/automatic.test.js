@@ -4,12 +4,15 @@ import { test } from "node:test";
 
 import {
   allocateDailyBudgets,
+  automaticOutputRowCount,
   buildAutomaticSpRows,
   generateAutomaticCampaigns,
   parseSkuList,
   validateAutomaticCampaigns,
+  validateAutomaticOutputSize,
   validateAutomaticSetup,
 } from "../src/lib/automatic.js";
+import { validateNegativeProducts } from "../src/lib/validation.js";
 import {
   decryptDraft,
   encryptDraft,
@@ -115,6 +118,68 @@ test("builds four template-compatible rows for every isolated automatic campaign
   assert.equal(rows[3]["Product Targeting Expression"], "close-match");
 });
 
+test("adds separate upfront negative keywords and negative products to every automatic ad group", () => {
+  const settings = fixture();
+  const campaigns = generateAutomaticCampaigns(settings);
+  const negativeKeywords = [
+    { id: "auto-negative-1", text: "poster", matchType: "negativeExact" },
+    { id: "auto-negative-2", text: "framed", matchType: "negativePhrase" },
+  ];
+  const negativeProducts = [
+    { id: "auto-product-1", asin: "b0abc12345" },
+    { id: "auto-product-2", asin: "B0DEF67890" },
+  ];
+  const rows = buildAutomaticSpRows(settings, campaigns, negativeKeywords, negativeProducts);
+  assert.equal(rows.length, 64);
+  assert.equal(automaticOutputRowCount(campaigns, negativeKeywords, negativeProducts), 64);
+  assert.deepEqual(entityCounts(rows), {
+    Campaign: 8,
+    "Ad Group": 8,
+    "Product Ad": 8,
+    "Product Targeting": 8,
+    "Negative Keyword": 16,
+    "Negative Product Targeting": 16,
+  });
+  assert.deepEqual(rows.slice(0, 8).map((row) => row.Entity), [
+    "Campaign",
+    "Ad Group",
+    "Product Ad",
+    "Product Targeting",
+    "Negative Keyword",
+    "Negative Keyword",
+    "Negative Product Targeting",
+    "Negative Product Targeting",
+  ]);
+  assert.deepEqual(rows.slice(4, 6).map((row) => [row["Keyword Text"], row["Match Type"]]), [
+    ["poster", "negativeExact"],
+    ["framed", "negativePhrase"],
+  ]);
+  assert.deepEqual(rows.slice(6, 8).map((row) => row["Product Targeting Expression"]), [
+    'asin="B0ABC12345"',
+    'asin="B0DEF67890"',
+  ]);
+  assert.ok(rows.slice(4, 8).every((row) => row["Campaign ID"] === campaigns[0].temporaryId));
+  assert.ok(rows.slice(4, 8).every((row) => row["Ad Group ID"] === `${campaigns[0].temporaryId}-AG`));
+});
+
+test("validates automatic negative-product ASINs and total expanded row count", () => {
+  const issues = validateNegativeProducts([
+    { id: "bad-asin", asin: "short" },
+    { id: "duplicate-1", asin: "B0ABC12345" },
+    { id: "duplicate-2", asin: "b0abc12345" },
+  ]);
+  assert.ok(issues.some((item) => item.path === "negativeProductAsin" && item.rowId === "bad-asin"));
+  assert.equal(issues.filter((item) => item.path === "negativeProductDuplicate").length, 2);
+
+  const campaigns = Array.from({ length: 10000 }, (_, index) => ({ id: `c-${index}` }));
+  const negatives = Array.from({ length: 7 }, (_, index) => ({
+    id: `n-${index}`,
+    text: `negative ${index}`,
+    matchType: "negativeExact",
+  }));
+  assert.equal(validateAutomaticOutputSize(campaigns, negatives, []).length, 1);
+});
+
 test("writes automatic campaigns into the existing official workbook package", async () => {
   const settings = fixture();
   const campaigns = generateAutomaticCampaigns(settings);
@@ -144,6 +209,8 @@ test("hydrates a legacy v2 keyword draft and serializes both builders in v4", ()
   assert.equal(encoded.keyword.keywords[0].text, "legacy keyword");
   assert.equal(encoded.keyword.negativeKeywords[0].text, "");
   assert.equal(encoded.automatic.campaigns.length, 8);
+  assert.equal(encoded.automatic.negativeKeywords.length, 1);
+  assert.equal(encoded.automatic.negativeProducts.length, 1);
   assert.equal("startDate" in encoded.keyword.settings, false);
   assert.equal("startDate" in encoded.automatic.settings, false);
 });
@@ -179,10 +246,12 @@ test("encrypts complete drafts with a user passphrase and rejects a wrong passph
     negativeKeywords: [{ id: "negative-row", text: "private negative", matchType: "negativePhrase" }],
     automaticSettings: fixture(),
     automaticCampaigns: generateAutomaticCampaigns(fixture()),
+    automaticNegativeKeywords: [{ id: "auto-negative-row", text: "private auto negative", matchType: "negativeExact" }],
+    automaticNegativeProducts: [{ id: "auto-negative-product", asin: "B0ABC12345" }],
   });
   const envelope = await encryptDraft(value, "correct horse battery staple");
   assert.equal(isEncryptedDraft(envelope), true);
-  assert.doesNotMatch(JSON.stringify(envelope), /PRIVATE-SKU|private keyword|private negative/);
+  assert.doesNotMatch(JSON.stringify(envelope), /PRIVATE-SKU|private keyword|private negative|B0ABC12345/);
   assert.deepEqual(await decryptDraft(envelope, "correct horse battery staple"), value);
   await assert.rejects(
     decryptDraft(envelope, "wrong password"),

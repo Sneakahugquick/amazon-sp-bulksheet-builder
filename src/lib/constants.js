@@ -59,6 +59,7 @@ export const ENTITY_LABELS = {
   Keyword: "Keyword",
   "Negative Keyword": "Negative Keyword",
   "Product Targeting": "Product Targeting",
+  "Negative Product Targeting": "Negative Product Targeting",
 };
 
 export const AUTO_TARGETING_TYPES = [
@@ -81,6 +82,11 @@ export const EMPTY_NEGATIVE_KEYWORD = () => ({
   id: crypto.randomUUID(),
   text: "",
   matchType: "negativeExact",
+});
+
+export const EMPTY_NEGATIVE_PRODUCT = () => ({
+  id: crypto.randomUUID(),
+  asin: "",
 });
 
 export function todayYmd() {

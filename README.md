@@ -20,9 +20,10 @@
 1. 每行输入一个 Seller SKU，并填写所有待生成活动合计的总日预算。
 2. 选择 `close-match`、`loose-match`、`substitutes`、`complements` 中需要的自动投放类型。
 3. 添加一个或多个出价档位，填写档位名称和出价。
-4. 生成完整的“SKU × 自动投放类型 × 出价档位”组合。总日预算按整数美分平均分配，余分按预览顺序补齐。
-5. 在活动预览中编辑名称、日预算、出价和状态；预算合计不一致时导出会被阻止，可一键重新平均分配。
-6. 预览 32 列模板行并导出 `.xlsx`。
+4. 在两个独立区域分别批量添加前置否定关键词和否定商品 ASIN；两类列表只应用到自动广告，不与关键词广告页共用。
+5. 生成完整的“SKU × 自动投放类型 × 出价档位”组合。总日预算按整数美分平均分配，余分按预览顺序补齐。
+6. 在活动预览中编辑名称、日预算、出价和状态；预算合计不一致时导出会被阻止，可一键重新平均分配。
+7. 预览 32 列模板行并导出 `.xlsx`。每套活动会在四个基础行后追加独立的 `Negative Keyword` 与 `Negative Product Targeting` 行。
 
 导出后的文件可由操作人员自行检查和使用；本工具本身不会上传文件或调用广告 API。
 
@@ -45,9 +46,10 @@
 - `exact`、`phrase`、`broad`
 - 可独立批量添加广告组级否定词，支持 `negativeExact`、`negativePhrase`，整批应用到全部 MANUAL 广告组
 - `close-match`、`loose-match`、`substitutes`、`complements`
+- 自动广告可独立批量前置 `negativeExact` / `negativePhrase` 否定关键词和否定商品 ASIN
 - Seller SKU Product Ad
 - MANUAL：Campaign / Ad Group / Product Ad / Keyword 四个基础行；每个批量否定词为每套广告追加一个 Negative Keyword 行
-- AUTO：Campaign / Ad Group / Product Ad / Product Targeting 四行结构
+- AUTO：Campaign / Ad Group / Product Ad / Product Targeting 四个基础行；每个自动否定关键词与否定商品分别追加一行
 - MANUAL 的 Campaign Name、Campaign ID、Ad Group Name、Ad Group ID 均使用 `关键词-匹配方式`
 - AUTO 使用以 `AUTO-序号-SKU-投放类型-档位` 开头的唯一临时 ID，名称可在预览中编辑
 - Start Date 自动使用工具运行当天

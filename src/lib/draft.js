@@ -3,6 +3,7 @@ import {
   defaultBatchSettings,
   EMPTY_KEYWORD,
   EMPTY_NEGATIVE_KEYWORD,
+  EMPTY_NEGATIVE_PRODUCT,
   todayYmd,
 } from "./constants.js";
 
@@ -134,6 +135,12 @@ function hydrateNegativeKeywords(rows, legacyKeywordRows = []) {
   return migrated.length ? migrated : [EMPTY_NEGATIVE_KEYWORD()];
 }
 
+function hydrateNegativeProducts(rows) {
+  return Array.isArray(rows) && rows.length
+    ? rows.map((row) => ({ ...EMPTY_NEGATIVE_PRODUCT(), ...row }))
+    : [EMPTY_NEGATIVE_PRODUCT()];
+}
+
 function hydrateAutomaticSettings(value) {
   const defaults = defaultAutomaticSettings();
   const settings = { ...defaults, ...(value || {}), startDate: todayYmd() };
@@ -164,6 +171,8 @@ export function hydrateDraft(value) {
       automaticCampaigns: Array.isArray(value.automatic?.campaigns)
         ? value.automatic.campaigns
         : [],
+      automaticNegativeKeywords: hydrateNegativeKeywords(value.automatic?.negativeKeywords),
+      automaticNegativeProducts: hydrateNegativeProducts(value.automatic?.negativeProducts),
     };
   }
   return {
@@ -176,16 +185,31 @@ export function hydrateDraft(value) {
     negativeKeywords: [EMPTY_NEGATIVE_KEYWORD()],
     automaticSettings: defaultAutomaticSettings(),
     automaticCampaigns: [],
+    automaticNegativeKeywords: [EMPTY_NEGATIVE_KEYWORD()],
+    automaticNegativeProducts: [EMPTY_NEGATIVE_PRODUCT()],
   };
 }
 
-export function serializeDraft({ keywordSettings, keywords, negativeKeywords, automaticSettings, automaticCampaigns }) {
+export function serializeDraft({
+  keywordSettings,
+  keywords,
+  negativeKeywords,
+  automaticSettings,
+  automaticCampaigns,
+  automaticNegativeKeywords,
+  automaticNegativeProducts,
+}) {
   const { startDate: _keywordToday, ...savedKeywordSettings } = keywordSettings;
   const { startDate: _autoToday, ...savedAutomaticSettings } = automaticSettings;
   return {
     version: 4,
     keyword: { settings: savedKeywordSettings, keywords, negativeKeywords },
-    automatic: { settings: savedAutomaticSettings, campaigns: automaticCampaigns },
+    automatic: {
+      settings: savedAutomaticSettings,
+      campaigns: automaticCampaigns,
+      negativeKeywords: Array.isArray(automaticNegativeKeywords) ? automaticNegativeKeywords : [],
+      negativeProducts: Array.isArray(automaticNegativeProducts) ? automaticNegativeProducts : [],
+    },
     savedAt: new Date().toISOString(),
   };
 }

@@ -1133,6 +1133,28 @@ textarea:focus {
   width: 220px;
 }
 
+.negative-product-table th:nth-child(2) {
+  width: 260px;
+}
+
+.negative-product-table th:nth-child(3) {
+  width: 320px;
+}
+
+.target-expression {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 5px 7px;
+  border-radius: 4px;
+  background: #f1f3f5;
+  color: #505965;
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .table-input,
 .state-select {
   width: 100%;

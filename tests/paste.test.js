@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parsePastedKeywords, parsePastedNegativeKeywords } from "../src/lib/paste.js";
+import {
+  parsePastedKeywords,
+  parsePastedNegativeKeywords,
+  parsePastedNegativeProducts,
+} from "../src/lib/paste.js";
 
 test("parses an Excel three-column keyword, match type, and bid table", () => {
   const parsed = parsePastedKeywords(
@@ -58,4 +62,10 @@ test("applies one selected default to a one-column negative-keyword list", () =>
       { text: "framed", matchType: "negativePhrase" },
     ],
   );
+});
+
+test("parses a headered column of automatic negative-product ASINs", () => {
+  const parsed = parsePastedNegativeProducts("ASIN\nB0abc12345\nB0DEF67890");
+  assert.deepEqual(parsed.rows.map((row) => row.asin), ["B0ABC12345", "B0DEF67890"]);
+  assert.deepEqual(parsed.warnings, []);
 });
