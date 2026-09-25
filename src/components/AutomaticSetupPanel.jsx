@@ -5,24 +5,23 @@ import { Icon } from "./Icons.jsx";
 export function AutomaticSetupPanel({
   settings,
   fieldErrors,
-  tierIssues,
-  matrixCount,
+  campaignCount,
+  bidPlan,
   skuCount,
   onChange,
   onToggleTargeting,
-  onTierChange,
-  onAddTier,
-  onDeleteTier,
   onGenerate,
   generatedCount,
   canGenerate,
+  legacyNotice,
 }) {
   return (
     <>
       <section className="workspace-section" id="automatic-settings">
+        {legacyNotice ? <p className="section-error" role="alert">旧版自动活动的预算和出价规则已更新。SKU、投放类型及否定项已保留，请重新填写每活动预算与基准出价，再生成活动。</p> : null}
         <div className="section-title">
-          <h2>生成范围与总预算</h2>
-          <span>完整组合 · 不抽样</span>
+          <h2>商品与活动预算</h2>
+          <span>全部商品用于每个活动</span>
         </div>
         <div className="automatic-input-grid">
           <FormField label="Seller SKU 列表" required error={fieldErrors.get("skuText")}>
@@ -35,22 +34,22 @@ export function AutomaticSetupPanel({
             />
           </FormField>
           <div className="automatic-settings-card">
-            <FormField label="所有活动合计日预算" required error={fieldErrors.get("totalDailyBudget")}>
+            <FormField label="每个广告活动的日预算" required error={fieldErrors.get("dailyBudget")}>
               <div className="input-suffix">
                 <input
-                  id="automaticTotalBudget"
+                  id="automaticDailyBudget"
                   inputMode="decimal"
-                  onChange={(event) => onChange("totalDailyBudget", event.target.value)}
-                  placeholder="40.00"
-                  value={settings.totalDailyBudget}
+                  onChange={(event) => onChange("dailyBudget", event.target.value)}
+                  placeholder="20.00"
+                  value={settings.dailyBudget}
                 />
                 <span>站点货币</span>
               </div>
             </FormField>
-            <div className="budget-formula" aria-label="预算分配公式">
-              <span>预算分配</span>
-              <strong>{settings.totalDailyBudget || "0.00"} ÷ {matrixCount || 0} 个活动</strong>
-              <small>按美分平均分配；余数按预览顺序补齐，合计不变。</small>
+            <div className="budget-formula" aria-label="活动预算规则">
+              <span>预算规则</span>
+              <strong>每档均为 {settings.dailyBudget || "0.00"}</strong>
+              <small>预算应用到每个活动；档位之间只改变点击出价。</small>
             </div>
           </div>
         </div>
@@ -118,41 +117,38 @@ export function AutomaticSetupPanel({
 
       <section className="workspace-section" id="automatic-tiers">
         <div className="section-title">
-          <h2>出价档位</h2>
-          <span>{settings.bidTiers.length} 个档位</span>
+          <h2>点击出价阶梯</h2>
+          <span>{campaignCount} 档 = {campaignCount} 个活动</span>
         </div>
-        <div className={`bid-tier-list ${fieldErrors.get("bidTiers") ? "control-error" : ""}`}>
-          <div className="bid-tier-list__header"><span>档位名称</span><span>每次点击出价</span><span aria-hidden="true" /></div>
-          {settings.bidTiers.map((tier, index) => {
-            const rowIssues = tierIssues.get(tier.id) || [];
-            return (
-              <div className={`bid-tier-row ${rowIssues.length ? "bid-tier-row--error" : ""}`} key={tier.id}>
-                <input aria-label={`第 ${index + 1} 个档位名称`} maxLength={40} onChange={(event) => onTierChange(tier.id, "label", event.target.value)} placeholder="例如：标准档" value={tier.label} />
-                <div className="input-suffix">
-                  <input aria-label={`第 ${index + 1} 个档位出价`} inputMode="decimal" onChange={(event) => onTierChange(tier.id, "bid", event.target.value)} placeholder="0.50" value={tier.bid} />
-                  <span>站点货币</span>
-                </div>
-                <button aria-label={`删除第 ${index + 1} 个档位`} className="icon-button" disabled={settings.bidTiers.length === 1} onClick={() => onDeleteTier(tier.id)} type="button">
-                  <Icon name="trash" size={17} />
-                </button>
-                {rowIssues.length ? <small className="bid-tier-row__error">{rowIssues[0].message}</small> : null}
-              </div>
-            );
-          })}
-          <button className="table-add-row" onClick={onAddTier} type="button"><Icon name="plus" size={18} />添加出价档位</button>
+        <div className="automatic-bid-grid">
+          <FormField label="基准点击出价" required error={fieldErrors.get("baseBid")}>
+            <input id="automaticBaseBid" inputMode="decimal" onChange={(event) => onChange("baseBid", event.target.value)} placeholder="0.50" value={settings.baseBid} />
+          </FormField>
+          <FormField label="每档递减间隔" required error={fieldErrors.get("bidInterval")}>
+            <input id="automaticBidInterval" inputMode="decimal" onChange={(event) => onChange("bidInterval", event.target.value)} placeholder="0.01" value={settings.bidInterval} />
+          </FormField>
+          <FormField label="活动档位数" required error={fieldErrors.get("tierCount")}>
+            <input id="automaticTierCount" inputMode="numeric" onChange={(event) => onChange("tierCount", event.target.value)} placeholder="10" value={settings.tierCount} />
+          </FormField>
         </div>
+        {bidPlan.length ? (
+          <div className="automatic-bid-plan" aria-live="polite">
+            <span>自动规划出价</span>
+            <strong>{bidPlan.slice(0, 10).join(" → ")}{bidPlan.length > 10 ? ` → … → ${bidPlan.at(-1)}` : ""}</strong>
+            <small>第 1 档 = 基准价；其后每档减去间隔。</small>
+          </div>
+        ) : null}
       </section>
 
       <section className="generation-callout" id="automatic-generate">
         <div>
           <span>即将生成</span>
-          <strong>{skuCount} SKU × {settings.selectedTargetingTypes.length} 类型 × {settings.bidTiers.length} 档位 = {matrixCount} 套活动</strong>
-          <small>每套连续写入 Campaign、Ad Group、Product Ad、Product Targeting 四行。</small>
-          {fieldErrors.get("matrix") ? <small className="generation-callout__error">{fieldErrors.get("matrix")}</small> : null}
+          <strong>{campaignCount} 档出价 → {campaignCount} 个独立活动</strong>
+          <small>每个活动都包含 {skuCount} 个 SKU、{settings.selectedTargetingTypes.length} 种自动投放，并使用相同日预算。</small>
         </div>
         <button className="button button--primary" disabled={!canGenerate} onClick={onGenerate} type="button">
           <Icon name={generatedCount ? "refresh" : "plus"} />
-          {generatedCount ? "重新生成矩阵" : "生成活动矩阵"}
+          {generatedCount ? "重新生成活动" : "生成自动活动"}
         </button>
       </section>
     </>

@@ -112,20 +112,14 @@ export function defaultBatchSettings() {
   };
 }
 
-export const EMPTY_BID_TIER = () => ({
-  id: crypto.randomUUID(),
-  label: "",
-  bid: "",
-});
-
 export function defaultAutomaticSettings() {
   return {
     skuText: "",
-    totalDailyBudget: "",
+    dailyBudget: "",
     selectedTargetingTypes: AUTO_TARGETING_TYPES.map((item) => item.value),
-    bidTiers: [
-      { id: crypto.randomUUID(), label: "标准档", bid: "" },
-    ],
+    baseBid: "",
+    bidInterval: "0.01",
+    tierCount: "10",
     startDate: todayYmd(),
     endDate: "",
     biddingStrategy: BIDDING_STRATEGIES[0],

@@ -21,7 +21,7 @@ export function AutomaticCampaignTable({ campaigns, issuesByRow, onChange }) {
     return (
       <div className="automatic-empty-state">
         <strong>还没有活动预览</strong>
-        <p>先完成上方 SKU、自动投放类型、出价档位和总日预算，再生成完整组合。</p>
+        <p>填入 SKU、每活动日预算、基准点击出价、间隔和档位数，再生成自动活动。</p>
       </div>
     );
   }
@@ -32,7 +32,7 @@ export function AutomaticCampaignTable({ campaigns, issuesByRow, onChange }) {
         <thead>
           <tr>
             <th className="automatic-table__index">#</th>
-            <th className="automatic-table__dimension">SKU / 自动投放 / 档位</th>
+            <th className="automatic-table__dimension">档位 / 活动内容</th>
             <th>活动名称</th>
             <th>广告组名称</th>
             <th className="automatic-table__money">日预算</th>
@@ -49,15 +49,15 @@ export function AutomaticCampaignTable({ campaigns, issuesByRow, onChange }) {
                 <td className="automatic-table__index">{index + 1}</td>
                 <td>
                   <div className="matrix-dimension">
-                    <strong title={campaign.sku}>{campaign.sku}</strong>
-                    <span>{TARGET_LABELS[campaign.targetingType] || campaign.targetingType}</span>
-                    <code>{campaign.tierLabel}</code>
+                    <strong>第 {campaign.tierNumber} 档 · {campaign.bid}</strong>
+                    <span title={campaign.skus.join("、")}>{campaign.skus.length} 个 SKU</span>
+                    <code title={campaign.targetingTypes.map((value) => TARGET_LABELS[value] || value).join("、")}>{campaign.targetingTypes.length} 种投放</code>
                     <small title={campaign.temporaryId}>{campaign.temporaryId}</small>
                   </div>
                 </td>
                 <td><input aria-label={`第 ${index + 1} 行活动名称`} className="table-input" maxLength={128} onChange={(event) => onChange(campaign.id, "campaignName", event.target.value)} value={campaign.campaignName} /></td>
                 <td><input aria-label={`第 ${index + 1} 行广告组名称`} className="table-input" maxLength={255} onChange={(event) => onChange(campaign.id, "adGroupName", event.target.value)} value={campaign.adGroupName} /></td>
-                <td><input aria-label={`第 ${index + 1} 行日预算`} className="table-input" inputMode="decimal" onChange={(event) => onChange(campaign.id, "dailyBudget", event.target.value)} value={campaign.dailyBudget} /></td>
+                <td><span className="automatic-table__shared-budget">{campaign.dailyBudget}</span></td>
                 <td><input aria-label={`第 ${index + 1} 行出价`} className="table-input" inputMode="decimal" onChange={(event) => onChange(campaign.id, "bid", event.target.value)} value={campaign.bid} /></td>
                 <td>
                   <select aria-label={`第 ${index + 1} 行状态`} className={`state-select state-select--${campaign.state}`} onChange={(event) => onChange(campaign.id, "state", event.target.value)} value={campaign.state}>

@@ -143,19 +143,28 @@ function hydrateNegativeProducts(rows) {
 
 function hydrateAutomaticSettings(value) {
   const defaults = defaultAutomaticSettings();
-  const settings = { ...defaults, ...(value || {}), startDate: todayYmd() };
+  const { bidTiers: legacyTiers, totalDailyBudget: legacyTotalBudget, ...saved } = value || {};
+  const legacy = Array.isArray(legacyTiers) || legacyTotalBudget !== undefined;
+  const settings = { ...defaults, ...saved, startDate: todayYmd() };
   settings.selectedTargetingTypes = Array.isArray(value?.selectedTargetingTypes)
     ? value.selectedTargetingTypes
     : defaults.selectedTargetingTypes;
-  settings.bidTiers = Array.isArray(value?.bidTiers) && value.bidTiers.length
-    ? value.bidTiers.map((tier) => ({ id: crypto.randomUUID(), ...tier }))
-    : defaults.bidTiers;
-  return settings;
+  if (legacy) {
+    settings.dailyBudget = "";
+    settings.baseBid = "";
+    settings.bidInterval = defaults.bidInterval;
+    settings.tierCount = legacyTiers?.length ? String(legacyTiers.length) : defaults.tierCount;
+  }
+  return { settings, legacy };
 }
 
 export function hydrateDraft(value) {
   if (!value || typeof value !== "object") return null;
   if (value.version === 3 || value.keyword || value.automatic) {
+    const automatic = hydrateAutomaticSettings(value.automatic?.settings);
+    const savedCampaigns = Array.isArray(value.automatic?.campaigns) ? value.automatic.campaigns : [];
+    const legacyCampaigns = savedCampaigns.some((campaign) => !Array.isArray(campaign.skus)
+      || !Array.isArray(campaign.targetingTypes));
     return {
       keywordSettings: {
         ...defaultBatchSettings(),
@@ -167,10 +176,9 @@ export function hydrateDraft(value) {
         value.keyword?.negativeKeywords,
         value.keyword?.keywords,
       ),
-      automaticSettings: hydrateAutomaticSettings(value.automatic?.settings),
-      automaticCampaigns: Array.isArray(value.automatic?.campaigns)
-        ? value.automatic.campaigns
-        : [],
+      automaticSettings: automatic.settings,
+      automaticCampaigns: automatic.legacy || legacyCampaigns ? [] : savedCampaigns,
+      automaticNeedsRegeneration: automatic.legacy || legacyCampaigns,
       automaticNegativeKeywords: hydrateNegativeKeywords(value.automatic?.negativeKeywords),
       automaticNegativeProducts: hydrateNegativeProducts(value.automatic?.negativeProducts),
     };

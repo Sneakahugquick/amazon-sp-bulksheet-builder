@@ -12,6 +12,8 @@ export function NegativeProductPanel({
   onDelete,
   onAdd,
   onClear,
+  onClearProblems,
+  problemCount = 0,
 }) {
   const [text, setText] = useState("");
   const [page, setPage] = useState(1);
@@ -80,6 +82,17 @@ export function NegativeProductPanel({
           <button className="button button--secondary" onClick={onAdd} type="button">
             <Icon name="plus" />补充一行
           </button>
+          {onClearProblems ? (
+            <button
+              aria-label={`清除有问题的否定商品行${problemCount ? `（${problemCount}）` : ""}`}
+              className="button button--danger-quiet"
+              disabled={!problemCount}
+              onClick={onClearProblems}
+              type="button"
+            >
+              <Icon name="alert" />清除有问题的行{problemCount ? `（${problemCount}）` : ""}
+            </button>
+          ) : null}
           <button className="button button--quiet" onClick={onClear} type="button">
             <Icon name="trash" />清空
           </button>

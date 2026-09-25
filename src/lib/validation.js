@@ -231,6 +231,46 @@ export function validateNegativeProducts(negativeProducts = []) {
   return issues;
 }
 
+function removeProblemNegativeRows(rows, issues, duplicatePath, isBlank, duplicateKey, limit = Infinity) {
+  const source = Array.isArray(rows) ? rows : [];
+  const invalidIds = new Set(issues
+    .filter((item) => item.rowId && item.path !== duplicatePath)
+    .map((item) => item.rowId));
+  const seen = new Set();
+  let retainedCount = 0;
+  const cleaned = source.filter((row) => {
+    if (isBlank(row)) return true;
+    if (invalidIds.has(row.id)) return false;
+    const key = duplicateKey(row);
+    if (seen.has(key) || retainedCount >= limit) return false;
+    seen.add(key);
+    retainedCount += 1;
+    return true;
+  });
+  return { rows: cleaned, removedCount: source.length - cleaned.length };
+}
+
+export function removeProblemNegativeKeywordRows(rows = []) {
+  return removeProblemNegativeRows(
+    rows,
+    validateNegativeKeywords(rows),
+    "negativeDuplicate",
+    isBlankNegativeKeyword,
+    (row) => `${String(row.text ?? "").trim().toLocaleLowerCase()}|${row.matchType}`,
+  );
+}
+
+export function removeProblemNegativeProductRows(rows = []) {
+  return removeProblemNegativeRows(
+    rows,
+    validateNegativeProducts(rows),
+    "negativeProductDuplicate",
+    isBlankNegativeProduct,
+    (row) => String(row.asin ?? "").trim().toUpperCase(),
+    1000,
+  );
+}
+
 export function validateAll(settings, keywords, negativeKeywords, template, today) {
   const issues = [
     ...validateBatchSettings(settings, today),

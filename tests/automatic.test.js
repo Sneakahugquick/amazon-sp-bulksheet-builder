@@ -3,16 +3,22 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 import {
-  allocateDailyBudgets,
   automaticOutputRowCount,
   buildAutomaticSpRows,
+  combinationCount,
   generateAutomaticCampaigns,
   parseSkuList,
+  planAutomaticBids,
   validateAutomaticCampaigns,
   validateAutomaticOutputSize,
   validateAutomaticSetup,
 } from "../src/lib/automatic.js";
-import { validateNegativeProducts } from "../src/lib/validation.js";
+import {
+  removeProblemNegativeKeywordRows,
+  removeProblemNegativeProductRows,
+  validateNegativeKeywords,
+  validateNegativeProducts,
+} from "../src/lib/validation.js";
 import {
   decryptDraft,
   encryptDraft,
@@ -31,12 +37,11 @@ const templatePath = new URL("../reference/AdvertisingBulksheetTemplate-seller.x
 function fixture() {
   return {
     skuText: "CANVAS-001\nCANVAS-002",
-    totalDailyBudget: "10.03",
+    dailyBudget: "10.03",
     selectedTargetingTypes: ["close-match", "substitutes"],
-    bidTiers: [
-      { id: "tier-low", label: "探索档", bid: "0.35" },
-      { id: "tier-high", label: "进取档", bid: "0.72" },
-    ],
+    baseBid: "0.50",
+    bidInterval: "0.01",
+    tierCount: "2",
     startDate: "20260913",
     endDate: "",
     biddingStrategy: "Dynamic bids - down only",
@@ -46,6 +51,47 @@ function fixture() {
   };
 }
 
+function tieredFixture() {
+  return {
+    skuText: "CANVAS-001\nCANVAS-002",
+    dailyBudget: "20.00",
+    selectedTargetingTypes: ["close-match", "substitutes"],
+    baseBid: "0.50",
+    bidInterval: "0.01",
+    tierCount: "10",
+    startDate: "20260913",
+    endDate: "",
+    biddingStrategy: "Dynamic bids - down only",
+    state: "paused",
+    portfolioId: "",
+    offAmazon: "",
+  };
+}
+
+test("ten bid tiers create ten campaigns with the same products, targets and budget", () => {
+  const settings = tieredFixture();
+  assert.deepEqual(validateAutomaticSetup(settings, "20260913"), []);
+  const campaigns = generateAutomaticCampaigns(settings);
+  assert.equal(campaigns.length, 10);
+  assert.deepEqual(campaigns.map((campaign) => campaign.bid), [
+    "0.50", "0.49", "0.48", "0.47", "0.46", "0.45", "0.44", "0.43", "0.42", "0.41",
+  ]);
+  assert.ok(campaigns.every((campaign) => campaign.dailyBudget === "20.00"));
+  assert.ok(campaigns.every((campaign) => (
+    campaign.skus.join(",") === "CANVAS-001,CANVAS-002"
+    && campaign.targetingTypes.join(",") === "close-match,substitutes"
+  )));
+  const rows = buildAutomaticSpRows(settings, campaigns);
+  assert.equal(rows.length, 60);
+  assert.deepEqual(entityCounts(rows), {
+    Campaign: 10,
+    "Ad Group": 10,
+    "Product Ad": 20,
+    "Product Targeting": 20,
+  });
+  assert.deepEqual(validateAutomaticCampaigns(campaigns, settings.dailyBudget), []);
+});
+
 test("parses a full SKU list without sampling and removes only duplicates", () => {
   assert.deepEqual(
     parseSkuList(" SKU-1\nSKU-2\t sku-1 ; SKU-3,SKU-4 "),
@@ -53,43 +99,39 @@ test("parses a full SKU list without sampling and removes only duplicates", () =
   );
 });
 
-test("allocates integer cents deterministically and preserves the exact total", () => {
-  const budgets = allocateDailyBudgets("10.03", 8);
-  assert.deepEqual(budgets, ["1.26", "1.26", "1.26", "1.25", "1.25", "1.25", "1.25", "1.25"]);
-  assert.equal(budgets.reduce((sum, value) => sum + Math.round(Number(value) * 100), 0), 1003);
+test("plans bids in exact cents and rejects a zero or negative last tier", () => {
+  assert.deepEqual(planAutomaticBids("0.50", "0.01", "10"), [
+    "0.50", "0.49", "0.48", "0.47", "0.46", "0.45", "0.44", "0.43", "0.42", "0.41",
+  ]);
+  assert.deepEqual(planAutomaticBids("0.03", "0.01", "4"), []);
+  assert.deepEqual(planAutomaticBids("0.50", "0.01", "1e1"), []);
+  assert.equal(combinationCount({ tierCount: "1e1" }), 0);
 });
 
-test("requires every visible bid tier to be complete before generation", () => {
+test("validates base bid, decrement and tier count before generation", () => {
   const settings = fixture();
-  settings.bidTiers.push({ id: "tier-empty", label: "", bid: "" });
+  settings.baseBid = "0.03";
+  settings.tierCount = "4";
   const issues = validateAutomaticSetup(settings, "20260913");
-  assert.ok(issues.some((item) => item.path === "tierLabel" && item.rowId === "tier-empty"));
-  assert.ok(issues.some((item) => item.path === "tierBid" && item.rowId === "tier-empty"));
+  assert.ok(issues.some((item) => item.path === "bidInterval" && /末档出价/.test(item.message)));
+  settings.tierCount = "1.5";
+  assert.ok(validateAutomaticSetup(settings, "20260913").some((item) => item.path === "tierCount"));
 });
 
-test("generates the complete SKU x target type x bid tier matrix", () => {
+test("generates one campaign per tier with all SKUs and selected target types", () => {
   const settings = fixture();
   assert.deepEqual(validateAutomaticSetup(settings, "20260913"), []);
   const campaigns = generateAutomaticCampaigns(settings);
-  assert.equal(campaigns.length, 8);
-  assert.equal(new Set(campaigns.map((campaign) => campaign.temporaryId)).size, 8);
-  assert.deepEqual(
-    campaigns.map(({ sku, targetingType, tierLabel }) => [sku, targetingType, tierLabel]),
-    [
-      ["CANVAS-001", "close-match", "探索档"],
-      ["CANVAS-001", "close-match", "进取档"],
-      ["CANVAS-001", "substitutes", "探索档"],
-      ["CANVAS-001", "substitutes", "进取档"],
-      ["CANVAS-002", "close-match", "探索档"],
-      ["CANVAS-002", "close-match", "进取档"],
-      ["CANVAS-002", "substitutes", "探索档"],
-      ["CANVAS-002", "substitutes", "进取档"],
-    ],
-  );
-  assert.deepEqual(validateAutomaticCampaigns(campaigns, settings.totalDailyBudget), []);
+  assert.equal(campaigns.length, 2);
+  assert.equal(new Set(campaigns.map((campaign) => campaign.temporaryId)).size, 2);
+  assert.deepEqual(campaigns.map((campaign) => campaign.bid), ["0.50", "0.49"]);
+  assert.ok(campaigns.every((campaign) => campaign.dailyBudget === "10.03"));
+  assert.ok(campaigns.every((campaign) => campaign.skus.join(",") === "CANVAS-001,CANVAS-002"));
+  assert.ok(campaigns.every((campaign) => campaign.targetingTypes.join(",") === "close-match,substitutes"));
+  assert.deepEqual(validateAutomaticCampaigns(campaigns, settings.dailyBudget), []);
 });
 
-test("builds four template-compatible rows for every isolated automatic campaign", () => {
+test("writes every SKU and target into each tier's campaign", () => {
   const settings = fixture();
   const campaigns = generateAutomaticCampaigns(settings);
   campaigns[0] = {
@@ -99,23 +141,26 @@ test("builds four template-compatible rows for every isolated automatic campaign
     bid: "0.44",
   };
   const rows = buildAutomaticSpRows(settings, campaigns);
-  assert.equal(rows.length, 32);
+  assert.equal(rows.length, 12);
   assert.deepEqual(entityCounts(rows), {
-    Campaign: 8,
-    "Ad Group": 8,
-    "Product Ad": 8,
-    "Product Targeting": 8,
+    Campaign: 2,
+    "Ad Group": 2,
+    "Product Ad": 4,
+    "Product Targeting": 4,
   });
-  assert.deepEqual(rows.slice(0, 4).map((row) => row.Entity), [
-    "Campaign", "Ad Group", "Product Ad", "Product Targeting",
+  assert.deepEqual(rows.slice(0, 6).map((row) => row.Entity), [
+    "Campaign", "Ad Group", "Product Ad", "Product Ad", "Product Targeting", "Product Targeting",
   ]);
   assert.equal(rows[0]["Targeting Type"], "AUTO");
   assert.equal(rows[0]["Campaign Name"], "Edited automatic campaign");
-  assert.equal(rows[0]["Daily Budget"], 1.26);
+  assert.equal(rows[0]["Daily Budget"], 10.03);
   assert.equal(rows[1]["Ad Group Default Bid"], 0.44);
   assert.equal(rows[2].SKU, "CANVAS-001");
-  assert.equal(rows[3].Bid, 0.44);
-  assert.equal(rows[3]["Product Targeting Expression"], "close-match");
+  assert.equal(rows[3].SKU, "CANVAS-002");
+  assert.equal(rows[4].Bid, 0.44);
+  assert.equal(rows[5].Bid, 0.44);
+  assert.deepEqual(rows.slice(4, 6).map((row) => row["Product Targeting Expression"]), ["close-match", "substitutes"]);
+  assert.equal(rows[6]["Daily Budget"], 10.03);
 });
 
 test("adds separate upfront negative keywords and negative products to every automatic ad group", () => {
@@ -130,36 +175,38 @@ test("adds separate upfront negative keywords and negative products to every aut
     { id: "auto-product-2", asin: "B0DEF67890" },
   ];
   const rows = buildAutomaticSpRows(settings, campaigns, negativeKeywords, negativeProducts);
-  assert.equal(rows.length, 64);
-  assert.equal(automaticOutputRowCount(campaigns, negativeKeywords, negativeProducts), 64);
+  assert.equal(rows.length, 20);
+  assert.equal(automaticOutputRowCount(campaigns, negativeKeywords, negativeProducts), 20);
   assert.deepEqual(entityCounts(rows), {
-    Campaign: 8,
-    "Ad Group": 8,
-    "Product Ad": 8,
-    "Product Targeting": 8,
-    "Negative Keyword": 16,
-    "Negative Product Targeting": 16,
+    Campaign: 2,
+    "Ad Group": 2,
+    "Product Ad": 4,
+    "Product Targeting": 4,
+    "Negative Keyword": 4,
+    "Negative Product Targeting": 4,
   });
-  assert.deepEqual(rows.slice(0, 8).map((row) => row.Entity), [
+  assert.deepEqual(rows.slice(0, 10).map((row) => row.Entity), [
     "Campaign",
     "Ad Group",
     "Product Ad",
+    "Product Ad",
+    "Product Targeting",
     "Product Targeting",
     "Negative Keyword",
     "Negative Keyword",
     "Negative Product Targeting",
     "Negative Product Targeting",
   ]);
-  assert.deepEqual(rows.slice(4, 6).map((row) => [row["Keyword Text"], row["Match Type"]]), [
+  assert.deepEqual(rows.slice(6, 8).map((row) => [row["Keyword Text"], row["Match Type"]]), [
     ["poster", "negativeExact"],
     ["framed", "negativePhrase"],
   ]);
-  assert.deepEqual(rows.slice(6, 8).map((row) => row["Product Targeting Expression"]), [
+  assert.deepEqual(rows.slice(8, 10).map((row) => row["Product Targeting Expression"]), [
     'asin="B0ABC12345"',
     'asin="B0DEF67890"',
   ]);
-  assert.ok(rows.slice(4, 8).every((row) => row["Campaign ID"] === campaigns[0].temporaryId));
-  assert.ok(rows.slice(4, 8).every((row) => row["Ad Group ID"] === `${campaigns[0].temporaryId}-AG`));
+  assert.ok(rows.slice(6, 10).every((row) => row["Campaign ID"] === campaigns[0].temporaryId));
+  assert.ok(rows.slice(6, 10).every((row) => row["Ad Group ID"] === `${campaigns[0].temporaryId}-AG`));
 });
 
 test("validates automatic negative-product ASINs and total expanded row count", () => {
@@ -171,13 +218,49 @@ test("validates automatic negative-product ASINs and total expanded row count", 
   assert.ok(issues.some((item) => item.path === "negativeProductAsin" && item.rowId === "bad-asin"));
   assert.equal(issues.filter((item) => item.path === "negativeProductDuplicate").length, 2);
 
-  const campaigns = Array.from({ length: 10000 }, (_, index) => ({ id: `c-${index}` }));
+  const campaigns = Array.from({ length: 10000 }, (_, index) => ({ id: `c-${index}`, skus: ["SKU-1"], targetingTypes: ["close-match"] }));
   const negatives = Array.from({ length: 7 }, (_, index) => ({
     id: `n-${index}`,
     text: `negative ${index}`,
     matchType: "negativeExact",
   }));
   assert.equal(validateAutomaticOutputSize(campaigns, negatives, []).length, 1);
+});
+
+test("one-click negative keyword cleanup keeps the first valid duplicate and normal rows", () => {
+  const rows = [
+    { id: "first", text: "poster", matchType: "negativeExact" },
+    { id: "duplicate", text: " POSTER ", matchType: "negativeExact" },
+    { id: "different-match", text: "poster", matchType: "negativePhrase" },
+    { id: "invalid", text: "bad/name", matchType: "negativeExact" },
+    { id: "blank", text: "", matchType: "negativeExact" },
+  ];
+  const result = removeProblemNegativeKeywordRows(rows);
+  assert.equal(result.removedCount, 2);
+  assert.deepEqual(result.rows.map((row) => row.id), ["first", "different-match", "blank"]);
+  assert.deepEqual(validateNegativeKeywords(result.rows), []);
+  assert.equal(removeProblemNegativeKeywordRows(result.rows).removedCount, 0);
+});
+
+test("one-click negative product cleanup removes bad ASINs, extra duplicates and overflow", () => {
+  const uniqueRows = Array.from({ length: 1001 }, (_, index) => ({
+    id: `product-${index}`,
+    asin: `B${String(index).padStart(9, "0")}`,
+  }));
+  const rows = [
+    { id: "bad", asin: "short" },
+    uniqueRows[0],
+    { id: "duplicate", asin: uniqueRows[0].asin.toLowerCase() },
+    ...uniqueRows.slice(1),
+    { id: "blank", asin: "" },
+  ];
+  const result = removeProblemNegativeProductRows(rows);
+  assert.equal(result.removedCount, 3);
+  assert.equal(result.rows.length, 1001);
+  assert.equal(result.rows[0].id, "product-0");
+  assert.equal(result.rows.at(-1).id, "blank");
+  assert.ok(!result.rows.some((row) => row.id === "product-1000"));
+  assert.deepEqual(validateNegativeProducts(result.rows), []);
 });
 
 test("writes automatic campaigns into the existing official workbook package", async () => {
@@ -187,7 +270,7 @@ test("writes automatic campaigns into the existing official workbook package", a
   const output = await createBulksheet(source, buildAutomaticSpRows(settings, campaigns));
   const metadata = await inspectGeneratedWorkbook(output, "automatic-sample.xlsx");
   assert.equal(metadata.valid, true);
-  assert.equal(metadata.dataRowCount, 32);
+  assert.equal(metadata.dataRowCount, 12);
 });
 
 test("hydrates a legacy v2 keyword draft and serializes both builders in v4", () => {
@@ -208,11 +291,37 @@ test("hydrates a legacy v2 keyword draft and serializes both builders in v4", ()
   assert.equal(encoded.version, 4);
   assert.equal(encoded.keyword.keywords[0].text, "legacy keyword");
   assert.equal(encoded.keyword.negativeKeywords[0].text, "");
-  assert.equal(encoded.automatic.campaigns.length, 8);
+  assert.equal(encoded.automatic.campaigns.length, 2);
   assert.equal(encoded.automatic.negativeKeywords.length, 1);
   assert.equal(encoded.automatic.negativeProducts.length, 1);
   assert.equal("startDate" in encoded.keyword.settings, false);
   assert.equal("startDate" in encoded.automatic.settings, false);
+});
+
+test("keeps old automatic inputs and exclusions but requires regeneration after legacy draft restore", () => {
+  const restored = hydrateDraft({
+    version: 4,
+    keyword: { settings: {}, keywords: [] },
+    automatic: {
+      settings: {
+        skuText: "CANVAS-001\nCANVAS-002",
+        totalDailyBudget: "20.00",
+        selectedTargetingTypes: ["close-match", "substitutes"],
+        bidTiers: [
+          { id: "old-1", label: "A", bid: "0.50" },
+          { id: "old-2", label: "B", bid: "0.49" },
+        ],
+      },
+      campaigns: [{ id: "old-campaign", sku: "CANVAS-001", targetingType: "close-match" }],
+      negativeKeywords: [{ id: "old-negative", text: "irrelevant", matchType: "negativeExact" }],
+    },
+  });
+  assert.equal(restored.automaticNeedsRegeneration, true);
+  assert.equal(restored.automaticSettings.skuText, "CANVAS-001\nCANVAS-002");
+  assert.equal(restored.automaticSettings.dailyBudget, "");
+  assert.equal(restored.automaticSettings.tierCount, "2");
+  assert.equal(restored.automaticCampaigns.length, 0);
+  assert.equal(restored.automaticNegativeKeywords[0].text, "irrelevant");
 });
 
 test("migrates the earlier per-keyword negative fields into the independent batch", () => {

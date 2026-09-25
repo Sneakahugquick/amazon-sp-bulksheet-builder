@@ -13,7 +13,6 @@ import {
   BIDDING_STRATEGIES,
   DEFAULT_TEMPLATE_URL,
   DRAFT_STORAGE_KEY,
-  EMPTY_BID_TIER,
   EMPTY_KEYWORD,
   EMPTY_NEGATIVE_KEYWORD,
   EMPTY_NEGATIVE_PRODUCT,
@@ -24,14 +23,13 @@ import {
   todayYmd,
 } from "./lib/constants.js";
 import {
-  allocatedBudget,
   automaticOutputRowCount,
   buildAutomaticSpRows,
   combinationCount,
   generateAutomaticCampaigns,
   MAX_AUTOMATIC_OUTPUT_ROWS,
   parseSkuList,
-  rebalanceAutomaticBudgets,
+  planAutomaticBids,
   validateAutomaticCampaigns,
   validateAutomaticOutputSize,
   validateAutomaticSetup,
@@ -55,6 +53,8 @@ import {
   activeKeywords,
   activeNegativeKeywords,
   activeNegativeProducts,
+  removeProblemNegativeKeywordRows,
+  removeProblemNegativeProductRows,
   validateAll,
   validateNegativeKeywords,
   validateNegativeProducts,
@@ -125,6 +125,7 @@ export default function App() {
   );
   const [automaticSettings, setAutomaticSettings] = useState(restored?.automaticSettings || defaultAutomaticSettings());
   const [automaticCampaigns, setAutomaticCampaigns] = useState(restored?.automaticCampaigns || []);
+  const [automaticNeedsRegeneration, setAutomaticNeedsRegeneration] = useState(Boolean(restored?.automaticNeedsRegeneration));
   const [automaticNegativeKeywords, setAutomaticNegativeKeywords] = useState(
     restored?.automaticNegativeKeywords || [EMPTY_NEGATIVE_KEYWORD()],
   );
@@ -230,13 +231,17 @@ export default function App() {
     }
     return ids;
   }, [keywords, keywordIssuesByRow]);
+  const negativeKeywordCleanup = useMemo(
+    () => removeProblemNegativeKeywordRows(negativeKeywords),
+    [negativeKeywords],
+  );
   const automaticSetupIssues = useMemo(
     () => validateAutomaticSetup(automaticSettings, todayYmd()),
     [automaticSettings],
   );
   const automaticCampaignIssues = useMemo(
-    () => validateAutomaticCampaigns(automaticCampaigns, automaticSettings.totalDailyBudget),
-    [automaticCampaigns, automaticSettings.totalDailyBudget],
+    () => validateAutomaticCampaigns(automaticCampaigns, automaticSettings.dailyBudget),
+    [automaticCampaigns, automaticSettings.dailyBudget],
   );
   const automaticExclusionIssues = useMemo(() => [
     ...validateNegativeKeywords(automaticNegativeKeywords),
@@ -247,11 +252,19 @@ export default function App() {
       automaticNegativeProducts,
     ),
   ], [automaticCampaigns, automaticNegativeKeywords, automaticNegativeProducts]);
+  const automaticNegativeKeywordCleanup = useMemo(
+    () => removeProblemNegativeKeywordRows(automaticNegativeKeywords),
+    [automaticNegativeKeywords],
+  );
+  const automaticNegativeProductCleanup = useMemo(
+    () => removeProblemNegativeProductRows(automaticNegativeProducts),
+    [automaticNegativeProducts],
+  );
   const automaticIssues = useMemo(() => [
     ...templateValidationIssues(template),
     ...automaticSetupIssues,
     ...(automaticMatrixDirty && automaticCampaigns.length
-      ? [{ path: "matrix", message: "生成条件已更改，请重新生成活动矩阵", rowId: null }]
+      ? [{ path: "campaigns", message: "生成条件已更改，请重新生成自动活动", rowId: null }]
       : []),
     ...automaticCampaignIssues,
     ...automaticExclusionIssues,
@@ -290,24 +303,15 @@ export default function App() {
   const automaticCounts = useMemo(() => ({
     Campaign: automaticCampaigns.length,
     "Ad Group": automaticCampaigns.length,
-    "Product Ad": automaticCampaigns.length,
-    "Product Targeting": automaticCampaigns.length,
+    "Product Ad": automaticCampaigns.reduce((sum, campaign) => sum + (campaign.skus?.length || 0), 0),
+    "Product Targeting": automaticCampaigns.reduce((sum, campaign) => sum + (campaign.targetingTypes?.length || 0), 0),
     "Negative Keyword": automaticCampaigns.length * automaticNegativeKeywordCount,
     "Negative Product Targeting": automaticCampaigns.length * automaticNegativeProductCount,
-  }), [automaticCampaigns.length, automaticNegativeKeywordCount, automaticNegativeProductCount]);
+  }), [automaticCampaigns, automaticNegativeKeywordCount, automaticNegativeProductCount]);
   const automaticFieldErrors = useMemo(() => {
     const map = new Map();
     for (const item of automaticSetupIssues) {
       if (!item.rowId && !map.has(item.path)) map.set(item.path, item.message);
-    }
-    return map;
-  }, [automaticSetupIssues]);
-  const automaticTierIssues = useMemo(() => {
-    const map = new Map();
-    for (const item of automaticSetupIssues) {
-      if (!item.rowId) continue;
-      if (!map.has(item.rowId)) map.set(item.rowId, []);
-      map.get(item.rowId).push(item);
     }
     return map;
   }, [automaticSetupIssues]);
@@ -322,6 +326,11 @@ export default function App() {
   }, [automaticCampaignIssues, automaticExclusionIssues]);
   const matrixCount = useMemo(() => combinationCount(automaticSettings), [automaticSettings]);
   const skuCount = useMemo(() => parseSkuList(automaticSettings.skuText).length, [automaticSettings.skuText]);
+  const bidPlan = useMemo(() => planAutomaticBids(
+    automaticSettings.baseBid,
+    automaticSettings.bidInterval,
+    automaticSettings.tierCount,
+  ), [automaticSettings.baseBid, automaticSettings.bidInterval, automaticSettings.tierCount]);
 
   function navigate(nextPage) {
     if (nextPage === page) return;
@@ -386,6 +395,15 @@ export default function App() {
     setNegativeKeywords([EMPTY_NEGATIVE_KEYWORD()]);
   }
 
+  function clearProblemNegativeKeywords() {
+    if (!negativeKeywordCleanup.removedCount) return;
+    setNegativeKeywords((current) => {
+      const next = removeProblemNegativeKeywordRows(current).rows;
+      return next.length ? next : [EMPTY_NEGATIVE_KEYWORD()];
+    });
+    setToast(`已清除 ${negativeKeywordCleanup.removedCount} 行有问题的否定词`);
+  }
+
   function importNegativeKeywordRows(nextRows, mode) {
     setNegativeKeywords((current) => (
       mode === "replace" ? nextRows : [...activeNegativeKeywords(current), ...nextRows]
@@ -414,6 +432,15 @@ export default function App() {
       !window.confirm("确定清空自动广告的前置否定关键词吗？")
     ) return;
     setAutomaticNegativeKeywords([EMPTY_NEGATIVE_KEYWORD()]);
+  }
+
+  function clearProblemAutomaticNegativeKeywords() {
+    if (!automaticNegativeKeywordCleanup.removedCount) return;
+    setAutomaticNegativeKeywords((current) => {
+      const next = removeProblemNegativeKeywordRows(current).rows;
+      return next.length ? next : [EMPTY_NEGATIVE_KEYWORD()];
+    });
+    setToast(`已清除 ${automaticNegativeKeywordCleanup.removedCount} 行有问题的否定词`);
   }
 
   function importAutomaticNegativeKeywords(nextRows, mode) {
@@ -445,6 +472,15 @@ export default function App() {
     setAutomaticNegativeProducts([EMPTY_NEGATIVE_PRODUCT()]);
   }
 
+  function clearProblemAutomaticNegativeProducts() {
+    if (!automaticNegativeProductCleanup.removedCount) return;
+    setAutomaticNegativeProducts((current) => {
+      const next = removeProblemNegativeProductRows(current).rows;
+      return next.length ? next : [EMPTY_NEGATIVE_PRODUCT()];
+    });
+    setToast(`已清除 ${automaticNegativeProductCleanup.removedCount} 行有问题的否定商品`);
+  }
+
   function importAutomaticNegativeProducts(nextRows, mode) {
     setAutomaticNegativeProducts((current) => (
       mode === "replace" ? nextRows : [...activeNegativeProducts(current), ...nextRows]
@@ -459,7 +495,7 @@ export default function App() {
 
   function updateAutomaticSettings(field, value) {
     setAutomaticSettings((current) => ({ ...current, [field]: value }));
-    if (["skuText", "totalDailyBudget"].includes(field)) markAutomaticMatrixDirty();
+    if (["skuText", "dailyBudget", "baseBid", "bidInterval", "tierCount", "state"].includes(field)) markAutomaticMatrixDirty();
   }
 
   function toggleAutomaticTargeting(value) {
@@ -472,24 +508,6 @@ export default function App() {
     markAutomaticMatrixDirty();
   }
 
-  function updateBidTier(id, field, value) {
-    setAutomaticSettings((current) => ({
-      ...current,
-      bidTiers: current.bidTiers.map((tier) => (tier.id === id ? { ...tier, [field]: value } : tier)),
-    }));
-    markAutomaticMatrixDirty();
-  }
-
-  function addBidTier() {
-    setAutomaticSettings((current) => ({ ...current, bidTiers: [...current.bidTiers, EMPTY_BID_TIER()] }));
-    markAutomaticMatrixDirty();
-  }
-
-  function deleteBidTier(id) {
-    setAutomaticSettings((current) => ({ ...current, bidTiers: current.bidTiers.filter((tier) => tier.id !== id) }));
-    markAutomaticMatrixDirty();
-  }
-
   function generateAutomaticMatrix() {
     if (automaticSetupIssues.length) {
       setToast(automaticSetupIssues[0].message);
@@ -498,6 +516,7 @@ export default function App() {
     if (automaticCampaigns.length && !window.confirm("重新生成会覆盖当前活动预览中的编辑，是否继续？")) return;
     const next = generateAutomaticCampaigns(automaticSettings);
     setAutomaticCampaigns(next);
+    setAutomaticNeedsRegeneration(false);
     setAutomaticMatrixDirty(false);
     setActiveStep(4);
     setToast(`已生成 ${next.length} 套自动广告，共 ${automaticOutputRowCount(next, automaticNegativeKeywords, automaticNegativeProducts)} 行`);
@@ -508,11 +527,6 @@ export default function App() {
     setAutomaticCampaigns((current) => current.map((campaign) => (
       campaign.id === id ? { ...campaign, [field]: value } : campaign
     )));
-  }
-
-  function rebalanceBudgets() {
-    setAutomaticCampaigns((current) => rebalanceAutomaticBudgets(current, automaticSettings.totalDailyBudget));
-    setToast("已按美分重新平均分配总日预算");
   }
 
   async function importTemplate(file) {
@@ -580,11 +594,14 @@ export default function App() {
       setNegativeKeywords(restoredValue.negativeKeywords);
       setAutomaticSettings(restoredValue.automaticSettings);
       setAutomaticCampaigns(restoredValue.automaticCampaigns);
+      setAutomaticNeedsRegeneration(Boolean(restoredValue.automaticNeedsRegeneration));
       setAutomaticNegativeKeywords(restoredValue.automaticNegativeKeywords);
       setAutomaticNegativeProducts(restoredValue.automaticNegativeProducts);
       setAutomaticMatrixDirty(false);
       setPlaintextDraftMigrated(false);
-      setToast("加密草稿已恢复");
+      setToast(restoredValue.automaticNeedsRegeneration
+        ? "旧版自动活动规则已更新；请重新填写每活动预算和出价后生成"
+        : "加密草稿已恢复");
     } catch (error) {
       setToast(error instanceof Error ? error.message : "加密草稿恢复失败");
     }
@@ -635,7 +652,7 @@ export default function App() {
       <header className="topbar">
         <div className="topbar__brand">
           <h1>Amazon SP 批量广告表格工具</h1>
-          <p>{isAutomatic ? "SKU × 自动投放类型 × 出价档位 · 本地生成与导出" : "一词一活动 · 批量生成关键词广告"}</p>
+          <p>{isAutomatic ? "每档一个自动活动 · 基准价按间隔递减" : "一词一活动 · 批量生成关键词广告"}</p>
         </div>
         <nav aria-label="广告类型" className="page-switcher">
           <button aria-current={!isAutomatic ? "page" : undefined} className={!isAutomatic ? "page-switcher__active" : ""} onClick={() => navigate("keywords")} type="button">关键词广告</button>
@@ -699,8 +716,10 @@ export default function App() {
                 onAdd={() => setNegativeKeywords((current) => [...current, EMPTY_NEGATIVE_KEYWORD()])}
                 onChange={updateNegativeKeyword}
                 onClear={clearNegativeKeywords}
+                onClearProblems={clearProblemNegativeKeywords}
                 onDelete={deleteNegativeKeyword}
                 onImport={importNegativeKeywordRows}
+                problemCount={negativeKeywordCleanup.removedCount}
                 rows={negativeKeywords}
               />
             </section>
@@ -717,18 +736,16 @@ export default function App() {
           <main className="workspace workspace--automatic">
             <AutomaticSetupPanel
               canGenerate={automaticSetupIssues.length === 0}
+              bidPlan={bidPlan}
+              campaignCount={matrixCount}
               fieldErrors={automaticFieldErrors}
               generatedCount={automaticCampaigns.length}
-              matrixCount={matrixCount}
-              onAddTier={addBidTier}
+              legacyNotice={automaticNeedsRegeneration}
               onChange={updateAutomaticSettings}
-              onDeleteTier={deleteBidTier}
               onGenerate={generateAutomaticMatrix}
-              onTierChange={updateBidTier}
               onToggleTargeting={toggleAutomaticTargeting}
               settings={automaticSettings}
               skuCount={skuCount}
-              tierIssues={automaticTierIssues}
             />
             <section className="workspace-section workspace-section--negative" id="automatic-negative-keywords">
               <div className="section-title">
@@ -741,8 +758,10 @@ export default function App() {
                 onAdd={() => setAutomaticNegativeKeywords((current) => [...current, EMPTY_NEGATIVE_KEYWORD()])}
                 onChange={updateAutomaticNegativeKeyword}
                 onClear={clearAutomaticNegativeKeywords}
+                onClearProblems={clearProblemAutomaticNegativeKeywords}
                 onDelete={deleteAutomaticNegativeKeyword}
                 onImport={importAutomaticNegativeKeywords}
+                problemCount={automaticNegativeKeywordCleanup.removedCount}
                 rows={automaticNegativeKeywords}
                 textareaId="automaticNegativeKeywordPasteText"
               />
@@ -758,22 +777,24 @@ export default function App() {
                 onAdd={() => setAutomaticNegativeProducts((current) => [...current, EMPTY_NEGATIVE_PRODUCT()])}
                 onChange={updateAutomaticNegativeProduct}
                 onClear={clearAutomaticNegativeProducts}
+                onClearProblems={clearProblemAutomaticNegativeProducts}
                 onDelete={deleteAutomaticNegativeProduct}
                 onImport={importAutomaticNegativeProducts}
+                problemCount={automaticNegativeProductCleanup.removedCount}
                 rows={automaticNegativeProducts}
               />
             </section>
             <section className="workspace-section workspace-section--automatic-preview" id="automatic-preview">
               <div className="section-title section-title--keywords"><h2>可编辑活动预览</h2><span>{automaticCampaigns.length} 套 · {automaticRowCount} 个 XLSX 行</span></div>
-              <div className="automatic-preview-toolbar"><p>维度与临时 ID 固定；名称、预算、出价和状态可在导出前逐项调整。</p><div><span>当前分配合计 <strong>{allocatedBudget(automaticCampaigns).toFixed(2)}</strong></span><button className="button button--secondary" disabled={!automaticCampaigns.length} onClick={rebalanceBudgets} type="button"><Icon name="refresh" />重新平均分配</button></div></div>
+              <div className="automatic-preview-toolbar"><p>每档一个活动；所有活动使用同一批商品、投放类型和日预算。名称、出价与状态可在导出前调整。</p></div>
               <AutomaticCampaignTable campaigns={automaticCampaigns} issuesByRow={automaticIssuesByRow} onChange={updateAutomaticCampaign} />
             </section>
           </main>
-          <SummaryRail counts={automaticCounts} entityOrder={["Campaign", "Ad Group", "Product Ad", "Product Targeting", "Negative Keyword", "Negative Product Targeting"]} exporting={exporting} issues={automaticIssues} onExport={exportWorkbook} onPreview={() => setShowPreview(true)} previewLabel="预览 XLSX 行" summaryCaption={`${automaticCampaigns.length} 套基础广告 + ${automaticNegativeKeywordCount} 个否定关键词 + ${automaticNegativeProductCount} 个否定商品，共 ${automaticRowCount} 行`} summaryTitle={`将创建 ${automaticCampaigns.length} 套自动广告`} template={template} totalRows={automaticRowCount} />
+          <SummaryRail counts={automaticCounts} entityOrder={["Campaign", "Ad Group", "Product Ad", "Product Targeting", "Negative Keyword", "Negative Product Targeting"]} exporting={exporting} issues={automaticIssues} onExport={exportWorkbook} onPreview={() => setShowPreview(true)} previewLabel="预览 XLSX 行" summaryCaption={`${automaticCampaigns.length} 个独立活动；每个活动含全部商品和已选自动投放类型，共 ${automaticRowCount} 行`} summaryTitle={`将创建 ${automaticCampaigns.length} 个自动广告活动`} template={template} totalRows={automaticRowCount} />
         </div>
       )}
 
-      {showPreview ? <PreviewDialog description={isAutomatic ? `共 ${automaticRowCount} 行；每套自动广告包含四个基础行，并分别追加前置 Negative Keyword 与 Negative Product Targeting 行；保留官方 32 列。` : `共 ${keywordRows.length} 行；每套关键词广告包含四个基础行，并把独立否定词列表逐条追加为 Negative Keyword 行；保留官方 32 列。`} onClose={() => setShowPreview(false)} rows={previewRows} /> : null}
+      {showPreview ? <PreviewDialog description={isAutomatic ? `共 ${automaticRowCount} 行；每个活动包含 Campaign、Ad Group、全部 Product Ad 与已选 Product Targeting，并追加前置否定项；保留官方 32 列。` : `共 ${keywordRows.length} 行；每套关键词广告包含四个基础行，并把独立否定词列表逐条追加为 Negative Keyword 行；保留官方 32 列。`} onClose={() => setShowPreview(false)} rows={previewRows} /> : null}
       {toast ? <div className="toast" role="status">{toast}</div> : null}
     </div>
   );

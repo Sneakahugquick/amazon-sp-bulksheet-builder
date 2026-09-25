@@ -435,69 +435,32 @@ button:disabled {
   font-size: 11.5px;
 }
 
-.bid-tier-list {
-  overflow: hidden;
+.automatic-bid-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.automatic-bid-plan {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-}
-
-.bid-tier-list__header,
-.bid-tier-row {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(220px, 0.65fr) 40px;
-  gap: 12px;
-  align-items: center;
-}
-
-.bid-tier-list__header {
-  min-height: 38px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border);
   background: var(--surface-subtle);
-  color: #333941;
-  font-size: 12px;
-  font-weight: 700;
 }
 
-.bid-tier-row {
-  position: relative;
-  min-height: 57px;
-  padding: 9px 12px;
-  border-bottom: 1px solid #e8ebef;
+.automatic-bid-plan span,
+.automatic-bid-plan small {
+  color: var(--muted);
+  font-size: 11.5px;
 }
 
-.bid-tier-row--error {
-  padding-bottom: 26px;
-  background: #fffafa;
-}
-
-.bid-tier-row > input,
-.bid-tier-row .input-suffix input {
-  width: 100%;
-  height: 38px;
-  min-width: 0;
-  padding: 0 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: 5px;
-  background: #fff;
+.automatic-bid-plan strong {
+  overflow-wrap: anywhere;
   font-size: 13px;
-}
-
-.bid-tier-row .input-suffix input {
-  border-radius: 5px 0 0 5px;
-}
-
-.bid-tier-row__error {
-  position: absolute;
-  bottom: 7px;
-  left: 12px;
-  color: var(--danger);
-  font-size: 10.5px;
-}
-
-.bid-tier-list .table-add-row {
-  width: calc(100% - 24px);
-  margin: 10px 12px 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .generation-callout {
@@ -649,6 +612,11 @@ button:disabled {
 
 .automatic-table__money {
   width: 92px;
+}
+
+.automatic-table__shared-budget {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
 }
 
 .automatic-table__state {

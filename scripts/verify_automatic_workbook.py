@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -41,7 +42,7 @@ def main() -> None:
     campaign_rows = rows_by_entity.get("Campaign", [])
     campaign_count = len(campaign_rows)
     assert campaign_count > 0
-    for entity in BASE_ENTITIES:
+    for entity in BASE_ENTITIES[:2]:
         assert len(rows_by_entity.get(entity, [])) == campaign_count, (entity, rows_by_entity)
 
     campaign_ids = [sheet.cell(row=row, column=4).value for row in campaign_rows]
@@ -49,7 +50,10 @@ def main() -> None:
     targeting_types = [sheet.cell(row=row, column=14).value for row in campaign_rows]
     budgets = [sheet.cell(row=row, column=16).value for row in campaign_rows]
     skus = [sheet.cell(row=row, column=17).value for row in rows_by_entity["Product Ad"]]
-    default_bids = [sheet.cell(row=row, column=18).value for row in rows_by_entity["Ad Group"]]
+    default_bids = {
+        sheet.cell(row=row, column=4).value: sheet.cell(row=row, column=18).value
+        for row in rows_by_entity["Ad Group"]
+    }
     target_bids = [sheet.cell(row=row, column=19).value for row in rows_by_entity["Product Targeting"]]
     expressions = [
         sheet.cell(row=row, column=27).value
@@ -62,9 +66,22 @@ def main() -> None:
     assert set(targeting_types) == {"AUTO"}
     assert set(expressions).issubset(EXPECTED_TARGETS) and expressions
     assert all(isinstance(value, (int, float)) and value > 0 for value in budgets)
-    assert all(isinstance(value, (int, float)) and value > 0 for value in default_bids)
-    assert target_bids == default_bids
+    assert len(set(budgets)) == 1, budgets
+    assert all(isinstance(value, (int, float)) and value > 0 for value in default_bids.values())
+    assert all(isinstance(value, (int, float)) and value > 0 for value in target_bids)
     assert all(skus)
+    products_by_campaign = defaultdict(set)
+    targets_by_campaign = defaultdict(set)
+    for row in rows_by_entity["Product Ad"]:
+        products_by_campaign[sheet.cell(row=row, column=4).value].add(sheet.cell(row=row, column=17).value)
+    for row in rows_by_entity["Product Targeting"]:
+        campaign_id = sheet.cell(row=row, column=4).value
+        targets_by_campaign[campaign_id].add(sheet.cell(row=row, column=27).value)
+        assert sheet.cell(row=row, column=19).value == default_bids[campaign_id]
+    assert set(products_by_campaign) == campaign_id_set
+    assert set(targets_by_campaign) == campaign_id_set
+    assert len({frozenset(values) for values in products_by_campaign.values()}) == 1
+    assert len({frozenset(values) for values in targets_by_campaign.values()}) == 1
     for entity in BASE_ENTITIES[1:]:
         assert {
             sheet.cell(row=row, column=4).value
@@ -104,6 +121,8 @@ def main() -> None:
         "targeting_expressions": sorted(set(expressions)),
         "skus": sorted(set(skus)),
         "daily_budget_total": round(sum(budgets), 2),
+        "daily_budget_per_campaign": budgets[0],
+        "planned_bids": [default_bids[campaign_id] for campaign_id in campaign_ids],
         "negative_keywords_per_campaign": len(negative_keyword_rows) // campaign_count,
         "negative_products_per_campaign": len(negative_product_rows) // campaign_count,
     }, ensure_ascii=False, indent=2))
