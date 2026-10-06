@@ -161,13 +161,19 @@ export function validateAutomaticSetup(settings, today) {
   return issues;
 }
 
-export function validateAutomaticCampaigns(campaigns, dailyBudget) {
+export function validateAutomaticCampaigns(campaigns, dailyBudget, batch = null) {
   const issues = [];
   if (!campaigns.length) {
     issues.push(issue("campaigns", "请先生成自动广告活动"));
     return issues;
   }
 
+  const expectedSkus = batch?.skuText !== undefined ? parseSkuList(batch.skuText) : null;
+  const expectedSkuSet = expectedSkus ? new Set(expectedSkus) : null;
+  const expectedCount = batch?.tierCount !== undefined ? combinationCount(batch) : null;
+  if (expectedCount !== null && campaigns.length !== expectedCount) {
+    issues.push(issue("campaigns", "活动数量必须等于出价档位数，请重新生成本批次活动"));
+  }
   const ids = new Set();
   const expectedBudgetCents = moneyToCents(dailyBudget);
   for (const campaign of campaigns) {
@@ -190,6 +196,14 @@ export function validateAutomaticCampaigns(campaigns, dailyBudget) {
     if (!Array.isArray(campaign.skus) || !campaign.skus.length
       || campaign.skus.some((sku) => !String(sku).trim())) {
       issues.push(issue("skus", "每个活动至少需要一个 Seller SKU", campaign.id));
+    }
+    if (expectedSkus && Array.isArray(campaign.skus)) {
+      const campaignSkus = campaign.skus.map((sku) => String(sku).trim());
+      if (campaignSkus.length !== expectedSkus.length
+        || new Set(campaignSkus).size !== expectedSkus.length
+        || campaignSkus.some((sku) => !expectedSkuSet.has(sku))) {
+        issues.push(issue("skus", "每个活动必须包含本批次全部 SKU，请重新生成活动", campaign.id));
+      }
     }
     if (!Array.isArray(campaign.targetingTypes) || !campaign.targetingTypes.length
       || campaign.targetingTypes.some((value) => !AUTO_TYPE_VALUES.has(value))) {

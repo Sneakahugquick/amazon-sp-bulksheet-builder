@@ -158,6 +158,17 @@ function hydrateAutomaticSettings(value) {
   return { settings, legacy };
 }
 
+function hydrateKeywordSettings(value) {
+  const settings = { ...defaultBatchSettings(), ...(value || {}), startDate: todayYmd() };
+  settings.creationMode = String(value?.creationMode ?? "single");
+  settings.waterfallTiers = Array.isArray(value?.waterfallTiers)
+    ? value.waterfallTiers.map(tier => ({
+      id: String(tier?.id ?? ""), bid: String(tier?.bid ?? ""), dailyBudget: String(tier?.dailyBudget ?? ""),
+    }))
+    : [];
+  return settings;
+}
+
 export function hydrateDraft(value) {
   if (!value || typeof value !== "object") return null;
   if (value.version === 3 || value.keyword || value.automatic) {
@@ -166,11 +177,7 @@ export function hydrateDraft(value) {
     const legacyCampaigns = savedCampaigns.some((campaign) => !Array.isArray(campaign.skus)
       || !Array.isArray(campaign.targetingTypes));
     return {
-      keywordSettings: {
-        ...defaultBatchSettings(),
-        ...(value.keyword?.settings || {}),
-        startDate: todayYmd(),
-      },
+      keywordSettings: hydrateKeywordSettings(value.keyword?.settings),
       keywords: hydrateKeywords(value.keyword?.keywords),
       negativeKeywords: hydrateNegativeKeywords(
         value.keyword?.negativeKeywords,
@@ -184,11 +191,7 @@ export function hydrateDraft(value) {
     };
   }
   return {
-    keywordSettings: {
-      ...defaultBatchSettings(),
-      ...(value.settings || {}),
-      startDate: todayYmd(),
-    },
+    keywordSettings: hydrateKeywordSettings(value.settings),
     keywords: hydrateKeywords(value.keywords),
     negativeKeywords: [EMPTY_NEGATIVE_KEYWORD()],
     automaticSettings: defaultAutomaticSettings(),
@@ -211,7 +214,7 @@ export function serializeDraft({
   const { startDate: _autoToday, ...savedAutomaticSettings } = automaticSettings;
   return {
     version: 4,
-    keyword: { settings: savedKeywordSettings, keywords, negativeKeywords },
+    keyword: { schemaVersion: 2, settings: savedKeywordSettings, keywords, negativeKeywords },
     automatic: {
       settings: savedAutomaticSettings,
       campaigns: automaticCampaigns,

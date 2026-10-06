@@ -21,10 +21,10 @@ export function AutomaticSetupPanel({
         {legacyNotice ? <p className="section-error" role="alert">旧版自动活动的预算和出价规则已更新。SKU、投放类型及否定项已保留，请重新填写每活动预算与基准出价，再生成活动。</p> : null}
         <div className="section-title">
           <h2>商品与活动预算</h2>
-          <span>全部商品用于每个活动</span>
+          <span>每档一个活动 · 全部 SKU 共用</span>
         </div>
         <div className="automatic-input-grid">
-          <FormField label="Seller SKU 列表" required error={fieldErrors.get("skuText")}>
+          <FormField label="同批 Seller SKU 列表" hint="每个出价档位创建 1 个活动，全部 SKU 共用该活动下的 1 个广告组。" required error={fieldErrors.get("skuText")}>
             <textarea
               className="sku-textarea"
               id="automaticSkuText"
@@ -49,7 +49,7 @@ export function AutomaticSetupPanel({
             <div className="budget-formula" aria-label="活动预算规则">
               <span>预算规则</span>
               <strong>每档均为 {settings.dailyBudget || "0.00"}</strong>
-              <small>预算应用到每个活动；档位之间只改变点击出价。</small>
+              <small>同一活动的全部 SKU 共用此预算，档位之间只改变点击出价。</small>
             </div>
           </div>
         </div>
@@ -144,7 +144,7 @@ export function AutomaticSetupPanel({
         <div>
           <span>即将生成</span>
           <strong>{campaignCount} 档出价 → {campaignCount} 个独立活动</strong>
-          <small>每个活动都包含 {skuCount} 个 SKU、{settings.selectedTargetingTypes.length} 种自动投放，并使用相同日预算。</small>
+          <small>每个活动：1 个广告组、全部 {skuCount} 个 SKU、{settings.selectedTargetingTypes.length} 类自动投放。活动数量由出价档位数决定。</small>
         </div>
         <button className="button button--primary" disabled={!canGenerate} onClick={onGenerate} type="button">
           <Icon name={generatedCount ? "refresh" : "plus"} />

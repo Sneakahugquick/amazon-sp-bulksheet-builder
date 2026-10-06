@@ -5,7 +5,7 @@ import { Icon } from "./Icons.jsx";
 
 const PAGE_SIZE = 100;
 
-export function KeywordTable({ rows, issuesByRow, onChange, onDelete, onAdd }) {
+export function KeywordTable({ rows, issuesByRow, onChange, onDelete, onAdd, waterfall = false }) {
   const [page, setPage] = useState(1);
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
 
@@ -29,8 +29,8 @@ export function KeywordTable({ rows, issuesByRow, onChange, onDelete, onAdd }) {
             <th className="keyword-table__index">#</th>
             <th>关键词</th>
             <th className="keyword-table__match">匹配方式</th>
-            <th className="keyword-table__bid">出价</th>
-            <th className="keyword-table__structure">自动生成的活动 / 广告组 / 临时 ID</th>
+            <th className="keyword-table__bid">{waterfall ? "档位出价" : "出价"}</th>
+            <th className="keyword-table__structure">{waterfall ? "所属匹配活动" : "自动生成的活动 / 广告组 / 临时 ID"}</th>
             <th className="keyword-table__issue">问题</th>
             <th className="keyword-table__actions"><span className="sr-only">操作</span></th>
           </tr>
@@ -65,19 +65,19 @@ export function KeywordTable({ rows, issuesByRow, onChange, onDelete, onAdd }) {
                   </select>
                 </td>
                 <td>
-                  <input
+                  {waterfall ? <span className="row-issue row-issue--none">按档位表设置</span> : <input
                     aria-label={`第 ${index + 1} 行出价`}
                     className="table-input"
                     inputMode="decimal"
                     onChange={(event) => onChange(row.id, "bid", event.target.value)}
                     placeholder="0.00"
                     value={row.bid}
-                  />
+                  />}
                 </td>
                 <td>
                   <div className="generated-structure" title={structureName}>
-                    <strong>{structureName || "等待关键词"}</strong>
-                    <small>Campaign、Ad Group、Campaign ID、Ad Group ID 共用此值</small>
+                    <strong>{waterfall ? (row.text.trim() ? `每档 ${row.matchType} 活动` : "等待关键词") : (structureName || "等待关键词")}</strong>
+                    <small>{waterfall ? "同一匹配方式的词共用活动和广告组" : "Campaign、Ad Group、Campaign ID、Ad Group ID 共用此值"}</small>
                   </div>
                 </td>
                 <td>

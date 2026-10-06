@@ -13,7 +13,7 @@ function issue(path, message, rowId = null) {
 function isPositiveMoney(value) {
   const text = String(value ?? "").trim();
   if (!/^\d+(?:\.\d{1,2})?$/.test(text)) return false;
-  return Number(text) > 0;
+  return Number(text) > 0 && Number.isSafeInteger(Math.round(Number(text) * 100));
 }
 
 function validDate(value) {
@@ -86,7 +86,7 @@ export function validateBatchSettings(settings, today) {
   return issues;
 }
 
-export function validateKeywords(keywords) {
+export function validateKeywords(keywords, { requireBid = true, keywordIds = true } = {}) {
   const issues = [];
   const rows = activeKeywords(keywords);
   const seen = new Map();
@@ -120,11 +120,11 @@ export function validateKeywords(keywords) {
     if (!MATCH_VALUES.has(row.matchType)) {
       issues.push(issue("matchType", "匹配方式必须是 exact、phrase 或 broad", row.id));
     }
-    if (!isPositiveMoney(row.bid)) {
+    if (requireBid && !isPositiveMoney(row.bid)) {
       issues.push(issue("bid", "出价必须是大于 0、最多两位小数的数字", row.id));
     }
     const structureName = generatedStructureName(row);
-    if (keyword && !/^\p{L}/u.test(structureName)) {
+    if (keywordIds && keyword && !/^\p{L}/u.test(structureName)) {
       issues.push(
         issue(
           "temporaryId",
@@ -274,7 +274,10 @@ export function removeProblemNegativeProductRows(rows = []) {
 export function validateAll(settings, keywords, negativeKeywords, template, today) {
   const issues = [
     ...validateBatchSettings(settings, today),
-    ...validateKeywords(keywords),
+    ...validateKeywords(keywords, {
+      requireBid: settings.creationMode !== "waterfall",
+      keywordIds: settings.creationMode !== "waterfall",
+    }),
     ...validateNegativeKeywords(negativeKeywords),
   ];
 

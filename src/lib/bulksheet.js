@@ -3,8 +3,8 @@ import {
   SP_HEADERS,
   SP_SHEET_NAME,
 } from "./constants.js";
-import { activeKeywords, activeNegativeKeywords, normalizeMoney } from "./validation.js";
-import { generatedNames } from "./naming.js";
+import { activeNegativeKeywords, normalizeMoney } from "./validation.js";
+import { buildKeywordCampaigns } from "./keyword-campaigns.js";
 
 export const TEMPLATE_LIMITS = Object.freeze({
   maxFileBytes: 5 * 1024 * 1024,
@@ -174,21 +174,20 @@ function emptyRow(entity) {
 export function buildSpRows(settings, keywords, negativeKeywords = []) {
   const rows = [];
   const negatives = activeNegativeKeywords(negativeKeywords);
-  for (const keyword of activeKeywords(keywords)) {
-    const names = generatedNames(keyword);
-    const campaignId = names.campaignName;
-    const adGroupId = names.adGroupName;
+  for (const campaign of buildKeywordCampaigns(settings, keywords, negativeKeywords)) {
+    const campaignId = campaign.campaignName;
+    const adGroupId = campaign.adGroupName;
 
     rows.push({
       ...emptyRow("Campaign"),
       "Campaign ID": campaignId,
       "Portfolio ID": settings.portfolioId.trim(),
-      "Campaign Name": names.campaignName,
+      "Campaign Name": campaign.campaignName,
       "Start Date": settings.startDate.trim(),
       "End Date": settings.endDate.trim(),
       "Targeting Type": "MANUAL",
       State: settings.state,
-      "Daily Budget": normalizeMoney(settings.dailyBudget),
+      "Daily Budget": normalizeMoney(campaign.dailyBudget),
       "Bidding Strategy": settings.biddingStrategy,
       "Off-Amazon ad serving": settings.offAmazon,
     });
@@ -197,28 +196,24 @@ export function buildSpRows(settings, keywords, negativeKeywords = []) {
       ...emptyRow("Ad Group"),
       "Campaign ID": campaignId,
       "Ad Group ID": adGroupId,
-      "Ad Group Name": names.adGroupName,
+      "Ad Group Name": campaign.adGroupName,
       State: settings.state,
-      "Ad Group Default Bid": normalizeMoney(keyword.bid),
+      "Ad Group Default Bid": normalizeMoney(campaign.bid),
     });
 
-    rows.push({
-      ...emptyRow("Product Ad"),
-      "Campaign ID": campaignId,
-      "Ad Group ID": adGroupId,
-      State: settings.state,
-      SKU: settings.sku.trim(),
-    });
-
-    rows.push({
-      ...emptyRow("Keyword"),
-      "Campaign ID": campaignId,
-      "Ad Group ID": adGroupId,
-      State: settings.state,
-      Bid: normalizeMoney(keyword.bid),
-      "Keyword Text": keyword.text.trim(),
-      "Match Type": keyword.matchType,
-    });
+    for (const sku of campaign.skus) {
+      rows.push({
+        ...emptyRow("Product Ad"), "Campaign ID": campaignId, "Ad Group ID": adGroupId,
+        State: settings.state, SKU: sku,
+      });
+    }
+    for (const keyword of campaign.keywords) {
+      rows.push({
+        ...emptyRow("Keyword"), "Campaign ID": campaignId, "Ad Group ID": adGroupId,
+        State: settings.state, Bid: normalizeMoney(keyword.bid),
+        "Keyword Text": keyword.text.trim(), "Match Type": keyword.matchType,
+      });
+    }
 
     for (const negativeKeyword of negatives) {
       rows.push({

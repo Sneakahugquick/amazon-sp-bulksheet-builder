@@ -50,7 +50,7 @@ export function AutomaticCampaignTable({ campaigns, issuesByRow, onChange }) {
                 <td>
                   <div className="matrix-dimension">
                     <strong>第 {campaign.tierNumber} 档 · {campaign.bid}</strong>
-                    <span title={campaign.skus.join("、")}>{campaign.skus.length} 个 SKU</span>
+                    <span title={campaign.skus.join("、")}>全部 {campaign.skus.length} 个 SKU · 1 个广告组</span>
                     <code title={campaign.targetingTypes.map((value) => TARGET_LABELS[value] || value).join("、")}>{campaign.targetingTypes.length} 种投放</code>
                     <small title={campaign.temporaryId}>{campaign.temporaryId}</small>
                   </div>

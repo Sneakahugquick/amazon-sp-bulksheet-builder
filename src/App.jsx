@@ -5,6 +5,7 @@ import { BatchInputPanel } from "./components/BatchInputPanel.jsx";
 import { FormField } from "./components/FormField.jsx";
 import { Icon } from "./components/Icons.jsx";
 import { KeywordTable } from "./components/KeywordTable.jsx";
+import { KeywordWaterfallPanel } from "./components/KeywordWaterfallPanel.jsx";
 import { NegativeKeywordPanel } from "./components/NegativeKeywordPanel.jsx";
 import { NegativeProductPanel } from "./components/NegativeProductPanel.jsx";
 import { PreviewDialog } from "./components/Dialogs.jsx";
@@ -50,12 +51,17 @@ import {
   serializeDraft,
 } from "./lib/draft.js";
 import {
+  generateKeywordTiers,
+  keywordPlanSummary,
+  keywordTierPlanKey,
+  validateKeywordSetup,
+} from "./lib/keyword-campaigns.js";
+import {
   activeKeywords,
   activeNegativeKeywords,
   activeNegativeProducts,
   removeProblemNegativeKeywordRows,
   removeProblemNegativeProductRows,
-  validateAll,
   validateNegativeKeywords,
   validateNegativeProducts,
 } from "./lib/validation.js";
@@ -197,7 +203,7 @@ export default function App() {
   }, [plaintextDraftMigrated]);
 
   const keywordIssues = useMemo(
-    () => validateAll(keywordSettings, keywords, negativeKeywords, template, todayYmd()),
+    () => validateKeywordSetup(keywordSettings, keywords, negativeKeywords, template, todayYmd()),
     [keywordSettings, keywords, negativeKeywords, template],
   );
   const keywordRows = useMemo(
@@ -205,7 +211,10 @@ export default function App() {
     [keywordSettings, keywords, negativeKeywords],
   );
   const keywordCounts = useMemo(() => entityCounts(keywordRows), [keywordRows]);
-  const keywordCount = keywordCounts.Keyword || 0;
+  const keywordPlan = useMemo(() => keywordPlanSummary(keywordSettings, keywords, negativeKeywords), [keywordSettings, keywords, negativeKeywords]);
+  const keywordCount = keywordPlan.sourceKeywordCount;
+  const keywordCampaignCount = keywordCounts.Campaign || 0;
+  const keywordWaterfall = keywordSettings.creationMode === "waterfall";
   const negativeKeywordCount = activeNegativeKeywords(negativeKeywords).length;
   const negativeKeywordRowCount = keywordCounts["Negative Keyword"] || 0;
   const keywordFieldErrors = useMemo(() => {
@@ -240,8 +249,11 @@ export default function App() {
     [automaticSettings],
   );
   const automaticCampaignIssues = useMemo(
-    () => validateAutomaticCampaigns(automaticCampaigns, automaticSettings.dailyBudget),
-    [automaticCampaigns, automaticSettings.dailyBudget],
+    () => validateAutomaticCampaigns(automaticCampaigns, automaticSettings.dailyBudget, {
+      skuText: automaticSettings.skuText,
+      tierCount: automaticSettings.tierCount,
+    }),
+    [automaticCampaigns, automaticSettings.dailyBudget, automaticSettings.skuText, automaticSettings.tierCount],
   );
   const automaticExclusionIssues = useMemo(() => [
     ...validateNegativeKeywords(automaticNegativeKeywords),
@@ -334,11 +346,25 @@ export default function App() {
 
   function navigate(nextPage) {
     if (nextPage === page) return;
-    window.location.hash = nextPage === "automatic" ? "/automatic" : "/keywords";
+    window.location.hash = `/${nextPage}`;
   }
 
   function updateKeywordSettings(field, value) {
     setKeywordSettings((current) => ({ ...current, [field]: value }));
+  }
+
+  function createKeywordTiers() {
+    const tiers = generateKeywordTiers(keywordSettings);
+    if (!tiers.length) return;
+    if (keywordSettings.waterfallTiers.length && !window.confirm("重新生成会替换各档的自定义出价和预算，是否继续？")) return;
+    setKeywordSettings(current => ({ ...current, waterfallTiers: tiers, waterfallPlanKey: keywordTierPlanKey(current) }));
+    setToast(`已生成 ${tiers.length} 个出价档位；按实际匹配方式分别创建活动`);
+  }
+
+  function updateKeywordTier(index, field, value) {
+    setKeywordSettings(current => ({
+      ...current, waterfallTiers: current.waterfallTiers.map((tier, position) => position === index ? { ...tier, [field]: value } : tier),
+    }));
   }
 
   function updateKeyword(id, field, value) {
@@ -409,7 +435,7 @@ export default function App() {
       mode === "replace" ? nextRows : [...activeNegativeKeywords(current), ...nextRows]
     ));
     setActiveStep(4);
-    setToast(`已导入 ${nextRows.length} 个否定词，将应用到全部 ${keywordCount} 套广告`);
+    setToast(`已导入 ${nextRows.length} 个否定词，将应用到全部 ${keywordCampaignCount} 套广告`);
     window.setTimeout(() => document.querySelector("#negative-keywords")?.scrollIntoView({ behavior: "smooth" }), 0);
   }
 
@@ -629,7 +655,7 @@ export default function App() {
       const bytes = await createBulksheet(template.buffer, currentRows);
       const fileName = page === "automatic"
         ? `Amazon-SP-AUTO-${automaticCampaigns.length}-campaigns-${timestamp()}.xlsx`
-        : `Amazon-SP-${keywordCount}-campaigns-${timestamp()}.xlsx`;
+        : `Amazon-SP-${keywordWaterfall ? "KW-WATERFALL-" : ""}${keywordCampaignCount}-campaigns-${timestamp()}.xlsx`;
       downloadBytes(bytes, fileName);
       setToast(`已生成 ${fileName}`);
     } catch (error) {
@@ -652,10 +678,10 @@ export default function App() {
       <header className="topbar">
         <div className="topbar__brand">
           <h1>Amazon SP 批量广告表格工具</h1>
-          <p>{isAutomatic ? "每档一个自动活动 · 基准价按间隔递减" : "一词一活动 · 批量生成关键词广告"}</p>
+          <p>{isAutomatic ? "每档一个自动活动 · 基准价按间隔递减" : keywordWaterfall ? "关键词瀑布出价 · 按档位与匹配方式创建活动" : "一词一活动 · 批量生成关键词广告"}</p>
         </div>
         <nav aria-label="广告类型" className="page-switcher">
-          <button aria-current={!isAutomatic ? "page" : undefined} className={!isAutomatic ? "page-switcher__active" : ""} onClick={() => navigate("keywords")} type="button">关键词广告</button>
+          <button aria-current={page === "keywords" ? "page" : undefined} className={page === "keywords" ? "page-switcher__active" : ""} onClick={() => navigate("keywords")} type="button">关键词广告</button>
           <button aria-current={isAutomatic ? "page" : undefined} className={isAutomatic ? "page-switcher__active" : ""} onClick={() => navigate("automatic")} type="button">自动广告</button>
         </nav>
         <div className="topbar__actions">
@@ -677,10 +703,19 @@ export default function App() {
 
           <main className="workspace">
             <section className="workspace-section" id="batch-settings">
-              <div className="section-title"><h2>批量共用设置</h2><span>一词一活动 · 一词一组</span></div>
+              <div className="section-title"><h2>批量共用设置</h2><span>{keywordWaterfall ? "每档按匹配方式分组 · 全部 SKU 共用" : "一词一活动 · 一词一组"}</span></div>
+              <div className="keyword-mode-selector">
+                <FormField label="关键词广告创建模式" error={keywordFieldErrors.get("creationMode")}>
+                  <select id="keywordCreationMode" onChange={event => updateKeywordSettings("creationMode", event.target.value)} value={keywordSettings.creationMode}>
+                    {!["single", "waterfall"].includes(keywordSettings.creationMode) ? <option value={keywordSettings.creationMode}>草稿模式无效，请重新选择</option> : null}
+                    <option value="single">单档 · 每个关键词独立活动</option>
+                    <option value="waterfall">瀑布出价 · 每档按匹配方式分组</option>
+                  </select>
+                </FormField>
+              </div>
               <div className="form-grid form-grid--batch">
-                <FormField label="Seller SKU" required error={keywordFieldErrors.get("sku")}><input id="sku" onChange={(event) => updateKeywordSettings("sku", event.target.value)} placeholder="输入 Seller SKU，不是 ASIN" value={keywordSettings.sku} /></FormField>
-                <FormField label="每个广告活动的日预算" required error={keywordFieldErrors.get("dailyBudget")}><div className="input-suffix"><input id="dailyBudget" inputMode="decimal" onChange={(event) => updateKeywordSettings("dailyBudget", event.target.value)} placeholder="20.00" value={keywordSettings.dailyBudget} /><span>站点货币</span></div></FormField>
+                <FormField label="同批 Seller SKU 列表" required error={keywordFieldErrors.get("sku")} hint="每行一个 SKU；每个活动包含全部 SKU，共用 1 个广告组。"><textarea className="sku-textarea" id="sku" onChange={(event) => updateKeywordSettings("sku", event.target.value)} placeholder={"QA-000001\nQA-000002"} rows={3} value={keywordSettings.sku} /></FormField>
+                <FormField label={keywordWaterfall ? "档位初始日预算（每活动）" : "每个广告活动的日预算"} required error={keywordFieldErrors.get("dailyBudget")} hint={keywordWaterfall ? "生成档位时使用，生成后可逐档修改；SKU 数量不增加预算。" : "同一活动的全部 SKU 共用此预算。"}><div className="input-suffix"><input id="dailyBudget" inputMode="decimal" onChange={(event) => updateKeywordSettings("dailyBudget", event.target.value)} placeholder="20.00" value={keywordSettings.dailyBudget} /><span>站点货币</span></div></FormField>
                 <FormField label="开始日期" hint="自动使用今天"><input id="startDate" readOnly value={keywordSettings.startDate} /></FormField>
                 <FormField label="竞价策略" required error={keywordFieldErrors.get("biddingStrategy")}><select id="biddingStrategy" onChange={(event) => updateKeywordSettings("biddingStrategy", event.target.value)} value={keywordSettings.biddingStrategy}>{BIDDING_STRATEGIES.map((strategy) => <option key={strategy} value={strategy}>{strategy}</option>)}</select></FormField>
                 <FormField label="初始状态" required error={keywordFieldErrors.get("state")}><select id="campaignState" onChange={(event) => updateKeywordSettings("state", event.target.value)} value={keywordSettings.state}><option value="paused">已暂停 · paused</option><option value="enabled">已启用 · enabled</option></select></FormField>
@@ -690,25 +725,26 @@ export default function App() {
                 <FormField label="结束日期" error={keywordFieldErrors.get("endDate")} hint="留空则长期运行"><input inputMode="numeric" maxLength={8} onChange={(event) => updateKeywordSettings("endDate", event.target.value)} placeholder="YYYYMMDD" value={keywordSettings.endDate} /></FormField>
                 <FormField label="Off-Amazon ad serving" hint="留空则使用 Amazon 默认设置"><select onChange={(event) => updateKeywordSettings("offAmazon", event.target.value)} value={keywordSettings.offAmazon}><option value="">留空</option><option value="Increase reach">Increase reach</option><option value="Limit off-Amazon spend">Limit off-Amazon spend</option></select></FormField>
               </div></details>
-              <div className="structure-rule"><div><strong>每个关键词生成一套 4 行广告</strong><span>Campaign → Ad Group → Product Ad → Keyword</span></div><div><strong>批量否定词应用到全部广告组</strong><span>每个否定词按所选方式为每套广告追加 Negative Keyword 行</span></div></div>
+              <div className="structure-rule"><div><strong>{keywordWaterfall ? "每档每种匹配方式生成一个活动" : "每个关键词与匹配方式生成一个活动"}</strong><span>{keywordWaterfall ? "1 个广告组、全部 SKU、该匹配方式的全部关键词" : "1 个广告组、全部 SKU、1 个关键词"}</span></div><div><strong>批量否定词应用到全部广告组</strong><span>每个否定词按所选方式为每个活动追加 Negative Keyword 行</span></div></div>
+              {keywordWaterfall ? <KeywordWaterfallPanel settings={keywordSettings} keywords={keywords} fieldErrors={keywordFieldErrors} issuesByRow={keywordIssuesByRow} onChange={updateKeywordSettings} onGenerate={createKeywordTiers} onTierChange={updateKeywordTier} /> : <div className="automatic-bid-plan" id="keyword-budget-plan"><span>整批日预算</span><strong>{keywordPlan.totalDailyBudget ?? "待设置"}（站点货币）</strong><small>{keywordCampaignCount} 个活动 × 每活动预算；SKU 数量不增加预算。</small></div>}
             </section>
 
-            <section className="workspace-section" id="batch-input"><div className="section-title"><h2>批量粘贴关键词</h2><span>支持 Excel 多行粘贴</span></div><BatchInputPanel defaultBid={keywordSettings.pasteDefaultBid} defaultMatchType={keywordSettings.pasteDefaultMatchType} onDefaultChange={updateKeywordSettings} onImport={importBatchRows} /></section>
+            <section className="workspace-section" id="batch-input"><div className="section-title"><h2>批量粘贴关键词</h2><span>支持 Excel 多行粘贴</span></div><BatchInputPanel defaultBid={keywordSettings.pasteDefaultBid} defaultMatchType={keywordSettings.pasteDefaultMatchType} onDefaultChange={updateKeywordSettings} onImport={importBatchRows} waterfall={keywordWaterfall} /></section>
 
             <section className="workspace-section workspace-section--keywords" id="keyword-settings">
-              <div className="section-title section-title--keywords"><h2>关键词结果检查</h2><span>{keywordCount} 个关键词 → {keywordCount} 套独立广告</span></div>
+              <div className="section-title section-title--keywords"><h2>关键词结果检查</h2><span>{keywordCount} 个关键词 → {keywordCampaignCount} 个活动 · {keywordCounts.Keyword || 0} 个 Keyword 行</span></div>
               <div className="keyword-toolbar">
                 <button className="button button--secondary" onClick={() => setKeywords((current) => [...current, EMPTY_KEYWORD()])} type="button"><Icon name="plus" />补充一行</button>
                 <button className="button button--danger-quiet" disabled={!problemKeywordRowIds.size} onClick={clearProblemKeywordRows} type="button"><Icon name="alert" />清除有问题的行{problemKeywordRowIds.size ? `（${problemKeywordRowIds.size}）` : ""}</button>
                 <button className="button button--quiet" onClick={clearKeywords} type="button"><Icon name="trash" />清空</button>
               </div>
-              <KeywordTable issuesByRow={keywordIssuesByRow} onAdd={() => setKeywords((current) => [...current, EMPTY_KEYWORD()])} onChange={updateKeyword} onDelete={deleteKeyword} rows={keywords} />
+              <KeywordTable issuesByRow={keywordIssuesByRow} onAdd={() => setKeywords((current) => [...current, EMPTY_KEYWORD()])} onChange={updateKeyword} onDelete={deleteKeyword} rows={keywords} waterfall={keywordWaterfall} />
             </section>
 
             <section className="workspace-section workspace-section--negative" id="negative-keywords">
               <div className="section-title">
                 <h2>批量添加否定词</h2>
-                <span>{negativeKeywordCount} 个否定词 × {keywordCount} 套广告 = {negativeKeywordRowCount} 个 Negative Keyword 行</span>
+                <span>{negativeKeywordCount} 个否定词 × {keywordCampaignCount} 个活动 = {negativeKeywordRowCount} 个 Negative Keyword 行</span>
               </div>
               <p className="section-intro">这是一份独立的否定词列表；导出时会把整批否定词应用到上方所有关键词广告组。</p>
               <NegativeKeywordPanel
@@ -724,7 +760,7 @@ export default function App() {
               />
             </section>
           </main>
-          <SummaryRail counts={keywordCounts} entityOrder={["Campaign", "Ad Group", "Product Ad", "Keyword", "Negative Keyword"]} exporting={exporting} issues={keywordIssues} onExport={exportWorkbook} onPreview={() => setShowPreview(true)} summaryCaption={`${keywordCount} 套基础广告 + ${negativeKeywordCount} 个批量否定词，共 ${keywordRows.length} 行`} template={template} totalRows={keywordRows.length} />
+          <SummaryRail counts={keywordCounts} entityOrder={["Campaign", "Ad Group", "Product Ad", "Keyword", "Negative Keyword"]} exporting={exporting} issues={keywordIssues} onExport={exportWorkbook} onPreview={() => setShowPreview(true)} summaryTitle={`将创建 ${keywordCampaignCount} 个关键词广告活动`} summaryCaption={`每活动 1 个广告组、全部 ${keywordPlan.skus.length} 个 SKU；整批日预算 ${keywordPlan.totalDailyBudget ?? "待设置"}，共 ${keywordRows.length} 行`} template={template} totalRows={keywordRows.length} />
         </div>
       ) : (
         <div className="app-layout">
@@ -794,7 +830,7 @@ export default function App() {
         </div>
       )}
 
-      {showPreview ? <PreviewDialog description={isAutomatic ? `共 ${automaticRowCount} 行；每个活动包含 Campaign、Ad Group、全部 Product Ad 与已选 Product Targeting，并追加前置否定项；保留官方 32 列。` : `共 ${keywordRows.length} 行；每套关键词广告包含四个基础行，并把独立否定词列表逐条追加为 Negative Keyword 行；保留官方 32 列。`} onClose={() => setShowPreview(false)} rows={previewRows} /> : null}
+      {showPreview ? <PreviewDialog description={isAutomatic ? `共 ${automaticRowCount} 行；每个活动包含 Campaign、Ad Group、全部 Product Ad 与已选 Product Targeting，并追加前置否定项；保留官方 32 列。` : `共 ${keywordRows.length} 行；${keywordWaterfall ? "每档按匹配方式创建活动" : "每个关键词与匹配方式创建活动"}，每活动含 1 个广告组、全部 SKU 和对应关键词，否定词应用到全部广告组；保留官方 32 列。`} onClose={() => setShowPreview(false)} rows={previewRows} /> : null}
       {toast ? <div className="toast" role="status">{toast}</div> : null}
     </div>
   );

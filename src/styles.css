@@ -288,6 +288,62 @@ button:disabled {
   margin-top: 14px;
 }
 
+.keyword-mode-selector {
+  max-width: 440px;
+  margin-bottom: 20px;
+}
+
+.form-grid--batch > :first-child {
+  grid-column: 1 / -1;
+}
+
+.form-grid--batch #sku {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.keyword-waterfall {
+  margin-top: 28px;
+  border-top: 1px solid var(--border);
+  padding-top: 24px;
+}
+
+.keyword-waterfall .form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.keyword-waterfall h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.keyword-budget-plan {
+  margin-top: 18px;
+}
+
+.keyword-tier-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.keyword-tier-help {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.keyword-tier-table {
+  min-width: 620px;
+  table-layout: fixed;
+}
+
+.keyword-tier-table th:first-child { width: 75px; }
+.keyword-tier-table th:nth-child(2),
+.keyword-tier-table th:nth-child(3) { width: 130px; }
+.keyword-tier-name { display: block; overflow-wrap: anywhere; }
+
 .automatic-input-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);

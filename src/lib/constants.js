@@ -101,6 +101,12 @@ export function defaultBatchSettings() {
   return {
     sku: "",
     dailyBudget: "",
+    creationMode: "single",
+    waterfallBaseBid: "",
+    waterfallBidInterval: "0.01",
+    waterfallTierCount: "1",
+    waterfallTiers: [],
+    waterfallPlanKey: "",
     pasteDefaultMatchType: "exact",
     pasteDefaultBid: "",
     startDate: todayYmd(),
