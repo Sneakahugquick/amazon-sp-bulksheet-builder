@@ -1,6 +1,6 @@
 import { MATCH_TYPES } from "./constants.js";
 import { parseSkuList, planAutomaticBids } from "./automatic.js";
-import { generatedNames } from "./naming.js";
+import { keywordNaming, prefixedName } from "./naming.js";
 import { activeKeywords, activeNegativeKeywords, validateAll } from "./validation.js";
 
 export const MAX_KEYWORD_CAMPAIGNS = 10000;
@@ -110,8 +110,8 @@ export function validateKeywordSetup(settings, keywords, negativeKeywords, templ
   return [...validateAll(settings, keywords, negativeKeywords, template, today), ...validateKeywordPlan(settings, keywords, negativeKeywords)];
 }
 
-export function keywordWaterfallNames(tier, index, matchType) {
-  const campaignName = `KW-T${String(index + 1).padStart(4, "0")}-${matchType}-BID-${(moneyCents(tier.bid) / 100).toFixed(2)}`;
+export function keywordWaterfallNames(tier, index, matchType, prefix = "") {
+  const campaignName = prefixedName(prefix, `KW-T${String(index + 1).padStart(4, "0")}-${matchType}-BID-${(moneyCents(tier.bid) / 100).toFixed(2)}`);
   return { campaignName, adGroupName: `${campaignName}-AG` };
 }
 
@@ -120,12 +120,40 @@ export function buildKeywordCampaigns(settings, keywords, negativeKeywords = [])
   if (validateKeywordPlan(settings, keywords, negativeKeywords).length) return [];
   const { skus, groups } = keywordPlanSummary(settings, keywords, negativeKeywords);
   if (settings.creationMode !== "waterfall") {
-    return activeKeywords(keywords).map(keyword => ({
-      ...generatedNames(keyword), skus, keywords: [keyword], bid: keyword.bid, dailyBudget: settings.dailyBudget,
-    }));
+    const { nameFor } = keywordNaming(settings);
+    return activeKeywords(keywords).map((keyword, index) => {
+      const campaignName = nameFor(keyword, index);
+      return { campaignName, adGroupName: campaignName, skus, keywords: [keyword], bid: keyword.bid, dailyBudget: settings.dailyBudget };
+    });
   }
   return settings.waterfallTiers.flatMap((tier, index) => groups.map(group => ({
-    ...keywordWaterfallNames(tier, index, group.matchType), skus, matchType: group.matchType, tierNumber: index + 1,
+    ...keywordWaterfallNames(tier, index, group.matchType, settings.namePrefix), skus, matchType: group.matchType, tierNumber: index + 1,
     keywords: group.keywords.map(keyword => ({ ...keyword, bid: tier.bid })), bid: tier.bid, dailyBudget: tier.dailyBudget,
   })));
+}
+
+// Single-mode campaign name for every keyword row, keyed by row ID, for the review table.
+export function keywordCampaignNameMap(settings, keywords) {
+  const { nameFor } = keywordNaming(settings);
+  return new Map(activeKeywords(keywords).map((row, index) => [
+    row.id, String(row.text ?? "").trim() ? nameFor(row, index) : "",
+  ]));
+}
+
+const SAMPLE_KEYWORD = { text: "fanny pack", matchType: "broad", bid: "0.15" };
+
+// The name shown next to the naming settings: the first real keyword or tier when there is one.
+export function keywordNamingExample(settings, keywords) {
+  if (settings.creationMode === "waterfall") {
+    const tier = settings.waterfallTiers?.[0] ?? generateKeywordTiers(settings)[0] ?? { bid: "0.50" };
+    const matchType = keywordMatchGroups(keywords)[0]?.matchType ?? "exact";
+    return { name: keywordWaterfallNames(tier, 0, matchType, settings.namePrefix).campaignName, note: `第 1 档 ${matchType} 活动` };
+  }
+  const rows = activeKeywords(keywords);
+  const index = rows.findIndex(row => String(row.text ?? "").trim());
+  const keyword = index >= 0 ? rows[index] : SAMPLE_KEYWORD;
+  return {
+    name: keywordNaming(settings).nameFor(keyword, Math.max(index, 0)),
+    note: index >= 0 ? `以“${String(keyword.text).trim()}”为例` : "示例词 fanny pack · broad · 0.15",
+  };
 }

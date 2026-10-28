@@ -54,7 +54,7 @@ export function KeywordWaterfallPanel({ settings, keywords, fieldErrors, issuesB
                   <td>第 {position + 1} 档</td>
                   <td><input aria-label={`第 ${position + 1} 档出价`} className="table-input" inputMode="decimal" onChange={event => onTierChange(position, "bid", event.target.value)} value={tier.bid} /></td>
                   <td><input aria-label={`第 ${position + 1} 档每活动日预算`} className="table-input" inputMode="decimal" onChange={event => onTierChange(position, "dailyBudget", event.target.value)} value={tier.dailyBudget} /></td>
-                  <td>{summary.groups.map(group => <small className="keyword-tier-name" key={group.matchType}>{keywordWaterfallNames(tier, position, group.matchType).campaignName}</small>)}<span className="row-issue">{issues[0]?.message || ""}</span></td>
+                  <td>{summary.groups.map(group => <small className="keyword-tier-name" key={group.matchType}>{keywordWaterfallNames(tier, position, group.matchType, settings.namePrefix).campaignName}</small>)}<span className="row-issue">{issues[0]?.message || ""}</span></td>
                 </tr>
               );
             })}</tbody>

@@ -1,5 +1,5 @@
 import { BIDDING_STRATEGIES, MATCH_TYPES, NEGATIVE_MATCH_TYPES } from "./constants.js";
-import { generatedStructureName } from "./naming.js";
+import { generatedStructureName, keywordNaming, NAME_LIMITS, prefixIssues, startsWithLetter } from "./naming.js";
 
 const MATCH_VALUES = new Set(MATCH_TYPES.map((item) => item.value));
 const NEGATIVE_MATCH_VALUES = new Set(NEGATIVE_MATCH_TYPES.map((item) => item.value));
@@ -86,10 +86,13 @@ export function validateBatchSettings(settings, today) {
   return issues;
 }
 
-export function validateKeywords(keywords, { requireBid = true, keywordIds = true } = {}) {
+export function validateKeywords(keywords, { requireBid = true, keywordIds = true, naming = null } = {}) {
   const issues = [];
   const rows = activeKeywords(keywords);
   const seen = new Map();
+  // Single mode uses each campaign name as its temporary ID, so names are checked per row.
+  const namer = keywordIds ? keywordNaming(naming) : null;
+  const nameOwners = new Map();
 
   if (rows.length === 0) {
     issues.push(issue("keywords", "至少需要一个关键词"));
@@ -99,7 +102,7 @@ export function validateKeywords(keywords, { requireBid = true, keywordIds = tru
     issues.push(issue("keywords", "单次最多生成 10,000 套广告结构"));
   }
 
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
     const keyword = String(row.text ?? "").trim();
     if (!keyword) {
       issues.push(issue("keywordText", "关键词不能为空", row.id));
@@ -124,16 +127,27 @@ export function validateKeywords(keywords, { requireBid = true, keywordIds = tru
       issues.push(issue("bid", "出价必须是大于 0、最多两位小数的数字", row.id));
     }
     const structureName = generatedStructureName(row);
-    if (keywordIds && keyword && !/^\p{L}/u.test(structureName)) {
-      issues.push(
-        issue(
-          "temporaryId",
-          "关键词加匹配方式后将作为临时 ID，必须以字母开头",
-          row.id,
-        ),
-      );
-    }
     const duplicateKey = structureName.toLocaleLowerCase();
+    if (namer && keyword) {
+      const name = namer.nameFor(row, index);
+      // Problems caused by the prefix or template are reported once on that field instead.
+      if (!namer.leadingBlocked && !startsWithLetter(name)) {
+        issues.push(issue(
+          "temporaryId",
+          namer.suggestPrefix
+            ? "名称同时作临时 ID，须以字母开头；可加一个字母开头的前缀"
+            : "名称同时作临时 ID，须以字母或汉字开头",
+          row.id,
+        ));
+      }
+      if (!namer.lengthBlocked && name.length > NAME_LIMITS.campaign) {
+        issues.push(issue("campaignName", `活动名称超过 ${NAME_LIMITS.campaign} 个字符，请缩短前缀或关键词`, row.id));
+      }
+      const nameKey = name.toLocaleLowerCase();
+      const owners = nameOwners.get(nameKey) ?? new Map();
+      owners.set(duplicateKey, [...(owners.get(duplicateKey) ?? []), row.id]);
+      nameOwners.set(nameKey, owners);
+    }
     if (keyword && seen.has(duplicateKey)) {
       issues.push(issue("duplicate", "批量列表中关键词与匹配方式重复", row.id));
       const firstRowId = seen.get(duplicateKey);
@@ -142,6 +156,24 @@ export function validateKeywords(keywords, { requireBid = true, keywordIds = tru
       }
     } else if (keyword) {
       seen.set(duplicateKey, row.id);
+    }
+  }
+
+  // Repeated keyword + match pairs are reported above; this catches different pairs
+  // that the naming template turns into the same campaign name.
+  const clashes = [...nameOwners.values()].filter((owners) => owners.size > 1);
+  if (clashes.length && namer.templateBlocked) {
+    // The template error already shown on the field explains these clashes.
+  } else if (clashes.length && !namer.distinguishes) {
+    issues.push(issue(
+      "nameTemplate",
+      `有 ${clashes.length} 组不同的关键词会得到相同的活动名称；模板需同时包含 {关键词} 和 {匹配}，或加入 {序号}`,
+    ));
+  } else {
+    for (const owners of clashes) {
+      for (const ids of owners.values()) {
+        for (const id of ids) issues.push(issue("duplicateName", "与其他关键词生成的活动名称相同，请调整命名", id));
+      }
     }
   }
 
@@ -272,11 +304,15 @@ export function removeProblemNegativeProductRows(rows = []) {
 }
 
 export function validateAll(settings, keywords, negativeKeywords, template, today) {
+  const waterfall = settings.creationMode === "waterfall";
   const issues = [
     ...validateBatchSettings(settings, today),
+    // Waterfall names keep their tier format, so only the prefix needs checking there.
+    ...(waterfall ? prefixIssues(settings.namePrefix) : keywordNaming(settings).issues),
     ...validateKeywords(keywords, {
-      requireBid: settings.creationMode !== "waterfall",
-      keywordIds: settings.creationMode !== "waterfall",
+      requireBid: !waterfall,
+      keywordIds: !waterfall,
+      naming: settings,
     }),
     ...validateNegativeKeywords(negativeKeywords),
   ];

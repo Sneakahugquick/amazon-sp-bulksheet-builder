@@ -1,6 +1,8 @@
+import { automaticNamingExample } from "../lib/automatic.js";
 import { AUTO_TARGETING_TYPES, BIDDING_STRATEGIES } from "../lib/constants.js";
 import { FormField } from "./FormField.jsx";
 import { Icon } from "./Icons.jsx";
+import { NamingSettings } from "./NamingSettings.jsx";
 
 export function AutomaticSetupPanel({
   settings,
@@ -70,6 +72,14 @@ export function AutomaticSetupPanel({
             </select>
           </FormField>
         </div>
+
+        <NamingSettings
+          example={{ name: automaticNamingExample(settings), note: generatedCount ? "第 1 档示例；改了前缀要重新生成活动" : "第 1 档示例" }}
+          fieldErrors={fieldErrors}
+          mode="automatic"
+          onChange={onChange}
+          settings={settings}
+        />
 
         <details className="advanced-settings">
           <summary>可选设置</summary>

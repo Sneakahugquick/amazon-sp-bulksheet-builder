@@ -7,6 +7,7 @@ import {
   activeNegativeProducts,
   normalizeMoney,
 } from "./validation.js";
+import { prefixedName, prefixIssues } from "./naming.js";
 
 const AUTO_TYPE_VALUES = new Set(AUTO_TARGETING_TYPES.map((item) => item.value));
 const CAMPAIGN_STATES = new Set(["enabled", "paused"]);
@@ -74,14 +75,18 @@ export function planAutomaticBids(baseBid, bidInterval, tierCount) {
   ));
 }
 
-function automaticNames({ bid, index }) {
-  const prefix = `AUTO-${String(index + 1).padStart(4, "0")}`;
-  const campaignName = `${prefix}-BID-${bid}`;
+function automaticNames({ bid, index, prefix }) {
+  const campaignName = prefixedName(prefix, `AUTO-${String(index + 1).padStart(4, "0")}-BID-${bid}`);
   return {
     temporaryId: campaignName,
     campaignName,
     adGroupName: `${campaignName}-AG`.slice(0, 255).replace(/[-_\s]+$/g, ""),
   };
+}
+
+export function automaticNamingExample(settings) {
+  const bid = planAutomaticBids(settings.baseBid, settings.bidInterval, settings.tierCount)[0] ?? "0.50";
+  return automaticNames({ bid, index: 0, prefix: settings.namePrefix }).campaignName;
 }
 
 export function generateAutomaticCampaigns(settings) {
@@ -94,7 +99,7 @@ export function generateAutomaticCampaigns(settings) {
 
   return bids.map((bid, index) => ({
     id: `auto-${index + 1}`,
-    ...automaticNames({ bid, index }),
+    ...automaticNames({ bid, index, prefix: settings.namePrefix }),
     skus: [...skus],
     targetingTypes: [...targetingTypes],
     tierNumber: index + 1,
@@ -158,6 +163,7 @@ export function validateAutomaticSetup(settings, today) {
   if (!CAMPAIGN_STATES.has(settings.state)) {
     issues.push(issue("state", "初始状态必须是 enabled 或 paused"));
   }
+  issues.push(...prefixIssues(settings.namePrefix));
   return issues;
 }
 

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { MATCH_TYPES } from "../lib/constants.js";
-import { generatedStructureName } from "../lib/naming.js";
 import { Icon } from "./Icons.jsx";
 
 const PAGE_SIZE = 100;
+const NO_NAMES = new Map();
 
-export function KeywordTable({ rows, issuesByRow, onChange, onDelete, onAdd, waterfall = false }) {
+// names: campaign name per row ID, built from the current naming settings.
+export function KeywordTable({ rows, names = NO_NAMES, issuesByRow, onChange, onDelete, onAdd, waterfall = false }) {
   const [page, setPage] = useState(1);
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
 
@@ -38,7 +39,7 @@ export function KeywordTable({ rows, issuesByRow, onChange, onDelete, onAdd, wat
         <tbody>
           {visibleRows.map(({ row, index }) => {
             const rowIssues = issuesByRow.get(row.id) || [];
-            const structureName = row.text.trim() ? generatedStructureName(row) : "";
+            const structureName = names.get(row.id) || "";
             return (
               <tr key={row.id} className={rowIssues.length ? "keyword-row--error" : ""}>
                 <td className="keyword-table__index">{index + 1}</td>

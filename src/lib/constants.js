@@ -115,6 +115,12 @@ export function defaultBatchSettings() {
     state: "paused",
     portfolioId: "",
     offAmazon: "",
+    // An empty prefix with these defaults produces the original "keyword-match" names.
+    namePrefix: "",
+    namePattern: "keyword-match",
+    nameTemplate: "",
+    nameSeparator: "-",
+    nameMatchStyle: "lower",
   };
 }
 
@@ -132,6 +138,7 @@ export function defaultAutomaticSettings() {
     state: "paused",
     portfolioId: "",
     offAmazon: "",
+    namePrefix: "",
   };
 }
 

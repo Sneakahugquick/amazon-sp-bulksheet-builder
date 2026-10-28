@@ -146,6 +146,7 @@ function hydrateAutomaticSettings(value) {
   const { bidTiers: legacyTiers, totalDailyBudget: legacyTotalBudget, ...saved } = value || {};
   const legacy = Array.isArray(legacyTiers) || legacyTotalBudget !== undefined;
   const settings = { ...defaults, ...saved, startDate: todayYmd() };
+  if (typeof settings.namePrefix !== "string") settings.namePrefix = defaults.namePrefix;
   settings.selectedTargetingTypes = Array.isArray(value?.selectedTargetingTypes)
     ? value.selectedTargetingTypes
     : defaults.selectedTargetingTypes;
@@ -158,9 +159,16 @@ function hydrateAutomaticSettings(value) {
   return { settings, legacy };
 }
 
+const KEYWORD_NAMING_FIELDS = ["namePrefix", "namePattern", "nameTemplate", "nameSeparator", "nameMatchStyle"];
+
 function hydrateKeywordSettings(value) {
-  const settings = { ...defaultBatchSettings(), ...(value || {}), startDate: todayYmd() };
+  const defaults = defaultBatchSettings();
+  const settings = { ...defaults, ...(value || {}), startDate: todayYmd() };
   settings.creationMode = String(value?.creationMode ?? "single");
+  // Drafts saved before naming settings existed restore with the original naming.
+  for (const field of KEYWORD_NAMING_FIELDS) {
+    if (typeof settings[field] !== "string") settings[field] = defaults[field];
+  }
   settings.waterfallTiers = Array.isArray(value?.waterfallTiers)
     ? value.waterfallTiers.map(tier => ({
       id: String(tier?.id ?? ""), bid: String(tier?.bid ?? ""), dailyBudget: String(tier?.dailyBudget ?? ""),

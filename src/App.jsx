@@ -6,6 +6,7 @@ import { FormField } from "./components/FormField.jsx";
 import { Icon } from "./components/Icons.jsx";
 import { KeywordTable } from "./components/KeywordTable.jsx";
 import { KeywordWaterfallPanel } from "./components/KeywordWaterfallPanel.jsx";
+import { NamingSettings } from "./components/NamingSettings.jsx";
 import { NegativeKeywordPanel } from "./components/NegativeKeywordPanel.jsx";
 import { NegativeProductPanel } from "./components/NegativeProductPanel.jsx";
 import { PreviewDialog } from "./components/Dialogs.jsx";
@@ -52,6 +53,8 @@ import {
 } from "./lib/draft.js";
 import {
   generateKeywordTiers,
+  keywordCampaignNameMap,
+  keywordNamingExample,
   keywordPlanSummary,
   keywordTierPlanKey,
   validateKeywordSetup,
@@ -111,6 +114,22 @@ function timestamp() {
   const now = new Date();
   const pad = (value) => String(value).padStart(2, "0");
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+}
+
+// Scroll only the column that holds the target. scrollIntoView would also move the
+// whole page, which cannot be scrolled back and leaves a blank band at the bottom.
+function scrollToSection(selector) {
+  const target = document.querySelector(selector);
+  const column = target?.closest(".workspace, .summary-rail");
+  if (!column) return;
+  const behavior = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+  if (column === target) {
+    column.scrollTo({ top: 0, behavior });
+    return;
+  }
+  const margin = Number.parseFloat(window.getComputedStyle(target).scrollMarginTop) || 0;
+  const top = target.getBoundingClientRect().top - column.getBoundingClientRect().top + column.scrollTop - margin;
+  column.scrollTo({ top: Math.max(0, top), behavior });
 }
 
 function templateValidationIssues(template) {
@@ -224,6 +243,14 @@ export default function App() {
     }
     return map;
   }, [keywordIssues]);
+  const keywordNames = useMemo(
+    () => (keywordWaterfall ? new Map() : keywordCampaignNameMap(keywordSettings, keywords)),
+    [keywordWaterfall, keywordSettings, keywords],
+  );
+  const keywordNamingSample = useMemo(
+    () => keywordNamingExample(keywordSettings, keywords),
+    [keywordSettings, keywords],
+  );
   const keywordIssuesByRow = useMemo(() => {
     const map = new Map();
     for (const item of keywordIssues) {
@@ -397,7 +424,7 @@ export default function App() {
     setKeywords((current) => (mode === "replace" ? nextRows : [...activeKeywords(current), ...nextRows]));
     setActiveStep(3);
     setToast(`已导入 ${nextRows.length} 个关键词`);
-    window.setTimeout(() => document.querySelector("#keyword-settings")?.scrollIntoView({ behavior: "smooth" }), 0);
+    window.setTimeout(() => scrollToSection("#keyword-settings"), 0);
   }
 
   function updateNegativeKeyword(id, field, value) {
@@ -436,7 +463,7 @@ export default function App() {
     ));
     setActiveStep(4);
     setToast(`已导入 ${nextRows.length} 个否定词，将应用到全部 ${keywordCampaignCount} 套广告`);
-    window.setTimeout(() => document.querySelector("#negative-keywords")?.scrollIntoView({ behavior: "smooth" }), 0);
+    window.setTimeout(() => scrollToSection("#negative-keywords"), 0);
   }
 
   function updateAutomaticNegativeKeyword(id, field, value) {
@@ -521,7 +548,7 @@ export default function App() {
 
   function updateAutomaticSettings(field, value) {
     setAutomaticSettings((current) => ({ ...current, [field]: value }));
-    if (["skuText", "dailyBudget", "baseBid", "bidInterval", "tierCount", "state"].includes(field)) markAutomaticMatrixDirty();
+    if (["skuText", "dailyBudget", "baseBid", "bidInterval", "tierCount", "state", "namePrefix"].includes(field)) markAutomaticMatrixDirty();
   }
 
   function toggleAutomaticTargeting(value) {
@@ -546,7 +573,7 @@ export default function App() {
     setAutomaticMatrixDirty(false);
     setActiveStep(4);
     setToast(`已生成 ${next.length} 套自动广告，共 ${automaticOutputRowCount(next, automaticNegativeKeywords, automaticNegativeProducts)} 行`);
-    window.setTimeout(() => document.querySelector("#automatic-preview")?.scrollIntoView({ behavior: "smooth" }), 0);
+    window.setTimeout(() => scrollToSection("#automatic-preview"), 0);
   }
 
   function updateAutomaticCampaign(id, field, value) {
@@ -667,7 +694,7 @@ export default function App() {
 
   function jumpTo(step, selector) {
     setActiveStep(step);
-    document.querySelector(selector)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    scrollToSection(selector);
   }
 
   const isAutomatic = page === "automatic";
@@ -720,6 +747,7 @@ export default function App() {
                 <FormField label="竞价策略" required error={keywordFieldErrors.get("biddingStrategy")}><select id="biddingStrategy" onChange={(event) => updateKeywordSettings("biddingStrategy", event.target.value)} value={keywordSettings.biddingStrategy}>{BIDDING_STRATEGIES.map((strategy) => <option key={strategy} value={strategy}>{strategy}</option>)}</select></FormField>
                 <FormField label="初始状态" required error={keywordFieldErrors.get("state")}><select id="campaignState" onChange={(event) => updateKeywordSettings("state", event.target.value)} value={keywordSettings.state}><option value="paused">已暂停 · paused</option><option value="enabled">已启用 · enabled</option></select></FormField>
               </div>
+              <NamingSettings example={keywordNamingSample} fieldErrors={keywordFieldErrors} mode={keywordWaterfall ? "waterfall" : "single"} onChange={updateKeywordSettings} settings={keywordSettings} />
               <details className="advanced-settings"><summary>可选设置</summary><div className="form-grid form-grid--advanced">
                 <FormField label="Portfolio ID" hint="留空则不加入 Portfolio"><input onChange={(event) => updateKeywordSettings("portfolioId", event.target.value)} placeholder="可选" value={keywordSettings.portfolioId} /></FormField>
                 <FormField label="结束日期" error={keywordFieldErrors.get("endDate")} hint="留空则长期运行"><input inputMode="numeric" maxLength={8} onChange={(event) => updateKeywordSettings("endDate", event.target.value)} placeholder="YYYYMMDD" value={keywordSettings.endDate} /></FormField>
@@ -738,7 +766,7 @@ export default function App() {
                 <button className="button button--danger-quiet" disabled={!problemKeywordRowIds.size} onClick={clearProblemKeywordRows} type="button"><Icon name="alert" />清除有问题的行{problemKeywordRowIds.size ? `（${problemKeywordRowIds.size}）` : ""}</button>
                 <button className="button button--quiet" onClick={clearKeywords} type="button"><Icon name="trash" />清空</button>
               </div>
-              <KeywordTable issuesByRow={keywordIssuesByRow} onAdd={() => setKeywords((current) => [...current, EMPTY_KEYWORD()])} onChange={updateKeyword} onDelete={deleteKeyword} rows={keywords} waterfall={keywordWaterfall} />
+              <KeywordTable issuesByRow={keywordIssuesByRow} names={keywordNames} onAdd={() => setKeywords((current) => [...current, EMPTY_KEYWORD()])} onChange={updateKeyword} onDelete={deleteKeyword} rows={keywords} waterfall={keywordWaterfall} />
             </section>
 
             <section className="workspace-section workspace-section--negative" id="negative-keywords">
